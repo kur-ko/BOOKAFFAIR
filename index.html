@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Book Affair - Comunidad, Citas Literarias y Radar Cultural</title>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class'
+  };
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,600;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
 <style>
@@ -307,6 +312,14 @@ body {
   position: relative;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(212, 160, 61, 0.12);
+}
+/* Blindaje de contraste para la tarjeta de eventos */
+.event-ticket-card h3 {
+  color: var(--ink) !important;
+}
+.event-ticket-card p {
+  color: var(--ink) !important;
+  opacity: 0.85;
 }
 .event-ticket-card::before {
   content: "";
