@@ -1689,6 +1689,7 @@ function renderBiblioteca(){
 // 📖 APERTURA DEL MODAL DE DETALLE Y VOTACIÓN
 // ==========================================
 function showBookDetail(id){
+  window.currentDetailBookId = id;
   try {
     console.log("-> Ejecutando showBookDetail con ID:", id);
     
@@ -1767,7 +1768,52 @@ function showBookDetail(id){
         </button>
       `).join('');
     }
+// Inyectar el botón de Veredicto y acciones literarias de forma automática
+    let matchBox = document.getElementById('mb-match-box');
+    if (!matchBox) {
+      matchBox = document.createElement('div');
+      matchBox.id = 'mb-match-box';
+      const synCard = document.getElementById('mb-synopsis') ? document.getElementById('mb-synopsis').closest('.card') : null;
+      if (synCard) {
+        synCard.after(matchBox);
+      } else {
+        const modalContent = document.querySelector('#modal-book > div');
+        if (modalContent) modalContent.appendChild(matchBox);
+      }
+    }
 
+    matchBox.className = "card p-3.5 text-xs space-y-2 mt-3";
+    matchBox.style.background = "var(--card-subtle)";
+    matchBox.style.border = "1px solid var(--line)";
+    matchBox.innerHTML = `
+      <div class="flex items-center justify-between text-xs pb-1 border-b" style="border-color: rgba(212, 160, 61, 0.3);">
+        <span class="font-bold flex items-center gap-1.5" style="color: var(--maroon);">
+          <span>⚖️</span> Veredicto del lector
+        </span>
+        <span class="text-[10px] font-bold text-amber-800 dark:text-amber-400">96% Afinidad</span>
+      </div>
+      
+      <p class="text-[11px] text-stone-600 dark:text-stone-400 leading-snug">
+        Selecciona tu puntuación arriba y pulsa para sellar tu juicio crítico en tu canon personal.
+      </p>
+
+      <div class="grid grid-cols-2 gap-2 pt-1">
+        <button type="button" 
+          onclick="confirmarVeredicto()" 
+          class="w-full py-2.5 px-3 rounded-xl font-bold text-xs text-white shadow-md flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+          style="background: linear-gradient(135deg, #781024, #D85A38);">
+          <span>Veredicto</span>
+          <span>🖋️</span>
+        </button>
+
+        <button type="button" 
+          onclick="closeBookModal(); openWhisper('laura', window.currentDetailBookId || 1, null)" 
+          class="w-full py-2.5 px-3 rounded-xl font-bold text-xs border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-200 bg-white dark:bg-stone-800 hover:bg-stone-100 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5">
+          <span>Susurrar</span>
+          <span>💌</span>
+        </button>
+      </div>
+    `;
     // 6. FORZAR VISIBILIDAD DIRECTA EN PANTALLA
     modalEl.classList.remove('hidden');
     modalEl.style.removeProperty('display');
@@ -1794,14 +1840,23 @@ function closeBookModal(){
 window.closeBookModal = closeBookModal;
 window.showBookDetail = showBookDetail;
 
-function closeBookModal(){
-  const modalEl = document.getElementById('modal-book');
-  if (modalEl) {
-    modalEl.classList.add('hidden');
-    modalEl.style.display = 'none';
+function confirmarVeredicto() {
+  const notaEl = document.getElementById('mb-my-rating');
+  const notaTexto = notaEl ? notaEl.textContent : '';
+
+  if (notaTexto && !notaTexto.includes('Sin puntuar')) {
+    toast(`Veredicto sellado: ${notaTexto} en tu canon 🖋️`);
+  } else {
+    toast('Selecciona una nota del 1 al 10 antes de emitir tu veredicto ⚖️');
+    return;
   }
+
+  setTimeout(() => {
+    closeBookModal();
+    if (typeof renderBiblioteca === 'function') renderBiblioteca();
+  }, 400);
 }
-window.closeBookModal = closeBookModal;
+window.confirmarVeredicto = confirmarVeredicto;
 
 // ==========================================
 // ⭐ VOTACIÓN PERSISTENTE EN SUPABASE
@@ -1926,9 +1981,9 @@ function renderMapa() {
           <span class="text-xs font-bold block leading-tight">Brújula Literaria</span>
           <span class="text-[10px]" style="color:var(--muted)">Lectores cercanos y eventos en vivo</span>
         </div>
-        <button onclick="centerOnUserRealGPS()" class="chip text-[11px] py-1.5 px-3 font-semibold flex items-center gap-1 shadow-sm">
-          🧭 Mi posición GPS
-        </button>
+      <button onclick="centerOnUserRealGPS()" class="chip text-[10px] py-1 px-3 bg-amber-500 text-stone-950 font-bold rounded-lg shadow-md flex items-center gap-1 cursor-pointer">
+        <span>🧭</span> Mi GPS
+      </button>
       </div>
 
       <!-- Filtros Temáticos -->
@@ -3750,9 +3805,7 @@ window.openBuyBook = openBuyBook;
       <p id="mb-synopsis" class="text-xs leading-relaxed text-stone-600 dark:text-stone-300"></p>
     </div>
 
-    <!-- Caja de complicidad Book Affair -->
-    <div id="mb-match-box" class="p-3 rounded-xl bg-[var(--card-subtle)] border border-[var(--line)] space-y-2 text-xs"></div>
-
+   
   </div>
 </div>
 </body>
