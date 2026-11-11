@@ -1,0 +1,25 @@
+CONTRASEÑA https://supabase.com/
+bookaffinity_VIC7
+
+SUPABASE_URL
+https://jgcwqcrxyqeicvuaqczm.supabase.co
+
+
+
+ACTUALIZACIONES
+1-Copia en tu carpeta local VERSIONES:
+En VS Code puedes hacer una copia de seguridad de este index.html dentro de tu carpeta VERSIONES con el nombre 20261110_BA_v02_hook.html.
+
+2-Subida a GitHub y actualización en Netlify:
+Abre la terminal (CTRL+Ñ)de VS Code y ejecuta:
+git add .
+git commit -m "v0.9.0: modelo hook, articulos 3-1-1, reels supabase y brujula flotante"
+git push origin main
+
+Prompt MEJORA UX
+"actua como experto  psicólogo del comportamiento, 
+ingeniero de software y diseñador de producto, 
+especializados en la disciplina de diseño del comportamiento (Behavioral Design) y cautivología (Captology). 
+Analiza la aplicación BookAffair en su diseño, optimízala bajo los principios de la economía de la atención, 
+siguiendo el marco de referencia Modelo de Hook (Gancho) de Nir Eyal, con el fin de crear hábito en el usuario,
+y haz una nueva versión corrigiendo lo que consideres necesario y mejorando en todo lo posible conforme los criterios mencionados"
