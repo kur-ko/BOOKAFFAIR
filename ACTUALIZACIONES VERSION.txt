@@ -1,0 +1,28 @@
+1-Guardar el archivo de trabajo actual:
+
+	En Visual Studio Code, asegúrate de que no haya un círculo blanco en la pestaña de index.html.
+
+	Pulsa Ctrl + S para guardar los últimos cambios en el disco.
+
+2-Crear la copia de seguridad local:
+
+	En el explorador de archivos de Windows (o en el panel lateral de VS Code), haz clic derecho sobre index.html y selecciona Copiar.
+
+	Entra en tu carpeta VERSIONES, haz clic derecho y selecciona Pegar.
+
+	Cambia el nombre de ese archivo duplicado a la versión correspondiente, por ejemplo:
+			20261111_BA_v02.html
+	Mantén ese archivo guardado como respaldo intacto y continúa editando únicamente index.html.
+	
+3-Registrar la versión en Git y GitHub:
+
+	Abre la terminal integrada de Visual Studio Code con el atajo Ctrl + ñ.
+
+	Ejecuta en orden los siguientes comandos pulsando Enter tras cada línea
+	git add .
+	
+			git commit -m "feat(v0.9.0): formula 3-1-1, articulos, reels supabase y brujula flotante"
+			git tag -a v0.9.0 -m "Release v0.9.0 Estable"
+			git push origin main --tags
+			
+	Al ejecutarse el git push, el código con su etiqueta oficial (v0.9.0) queda respaldado en la nube
