@@ -17,6 +17,11 @@
 .leaflet-tile-pane {
   filter: saturate(1.25) contrast(1.08) brightness(1.02);
 }
+
+.leaflet-control-attribution {
+  display: none !important;
+}
+
 :root {
   --bg: #F5EFEB;
   --surface: #FCFAF8;
@@ -1699,7 +1704,7 @@ function renderInicio(){
               </p>
 
               <!-- Cuerpo completo desplegable del artículo -->
-              <div id="article-body-${item.postId}" class="hidden pt-2 border-t space-y-2.5 text-xs leading-relaxed" style="border-color:var(--line); color:var(--ink)">
+              <div id="article-body-${item.postId}" data-article-body class="hidden pt-3 border-t space-y-3 text-xs leading-relaxed transition-all" style="border-color:var(--line); color:var(--ink); display:none;">
                 ${(item.paragraphs || []).map(p => `<p>${esc(p)}</p>`).join('')}
                 <div class="p-3 rounded-xl flex items-center justify-between mt-2" style="background:var(--card-subtle); border:1px solid var(--line)">
                   <div>
@@ -1721,11 +1726,9 @@ function renderInicio(){
                     ${ic('msg','w-3.5 h-3.5')} <span>Debatir artículo</span>
                   </button>
                 </div>
-                <button type="button" id="btn-art-${item.postId}" onclick="toggleArticleBody('${item.postId}')" class="text-xs font-extrabold underline cursor-pointer" style="color:var(--maroon)">
+                <button type="button" id="btn-art-${item.postId}" onclick="toggleArticleBody('${item.postId}')" class="text-xs font-extrabold underline cursor-pointe
                   Leer artículo completo ↓
                 </button>
-              </div>
-
               <!-- Hilo público de debate del artículo -->
               <div id="thread-box-${item.postId}" class="hidden mt-3 pt-3 border-t border-stone-200 dark:border-stone-800 space-y-2.5">
                 <div id="thread-comments-${item.postId}" class="space-y-2 text-xs"></div>
@@ -2219,6 +2222,31 @@ window.rateBook = rateBook;
 let leafletMapInstance = null;
 let userMarkerInstance = null;
 
+// 1. Aquí arriba sigue intacta centerOnUserRealGPS()
+
+// 2. Nueva función de encuadre inteligente
+function fitAllAranjuezPins(userLat, userLng) {
+  if (!leafletMapInstance) return;
+  const points = [
+    [40.0360, -3.5975], // Laura
+    [40.0315, -3.6050], // Marcos
+    [40.0352, -3.6075], // Sofía
+    [40.0368, -3.6088], // Quedada Palacio Real
+    [40.0322, -3.6028]  // Librería
+  ];
+  if (typeof userLat === 'number' && typeof userLng === 'number') {
+    const dist = Math.hypot(userLat - 40.034, userLng - (-3.603));
+    if (dist < 0.1) points.push([userLat, userLng]);
+  }
+  const bounds = L.latLngBounds(points);
+  leafletMapInstance.fitBounds(bounds, {
+    paddingTopLeft: [28, 28],
+    paddingBottomRight: [28, 125]
+  });
+}
+window.fitAllAranjuezPins = fitAllAranjuezPins;
+
+// 3. Vista de la Brújula con cápsula inferior
 function renderMapa() {
   const el = document.getElementById('v-mapa');
   if (!el) return;
@@ -2227,38 +2255,42 @@ function renderMapa() {
 
   el.innerHTML = `
     <div class="relative w-full h-[calc(100dvh-125px)] sm:h-[735px] overflow-hidden select-none">
-      
-      <!-- 1. MAPA LEAFLET A PANTALLA COMPLETA REAL (FONDO TOTAL) -->
       <div id="real-leaflet-map" class="absolute inset-0 w-full h-full z-0"></div>
 
-      <!-- 2. CÁPSULA FLOTANTE TRANSLÚCIDA (TÍTULO + GPS + FILTROS UNIFICADOS) -->
-      <div class="absolute top-3 inset-x-3 z-[1000] p-3 rounded-2xl border shadow-xl backdrop-blur-md space-y-2.5 transition"
-           style="background: color-mix(in srgb, var(--surface) 82%, transparent); border-color: var(--line);">
+      <div class="absolute bottom-7 inset-x-3 z-[1000] p-2.5 rounded-2xl border shadow-2xl backdrop-blur-md space-y-2 transition"
+           style="background: color-mix(in srgb, var(--surface) 88%, transparent); border-color: var(--line);">
         
-        <!-- Fila Superior: Título y Botón GPS -->
-        <div class="flex items-center justify-between gap-2">
-          <div>
-            <span class="text-xs font-bold block leading-tight text-stone-900 dark:text-stone-100">Brújula Literaria · Aranjuez</span>
-            <span class="text-[10px] text-stone-500 dark:text-stone-400">Lectores cercanos y quedadas activas</span>
+        <div class="flex items-center justify-between gap-2 px-0.5">
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+              <span class="text-xs font-extrabold tracking-tight truncate text-stone-900 dark:text-stone-100">Brújula · Aranjuez</span>
+            </div>
+            <span class="text-[9.5px] text-stone-500 dark:text-stone-400 block">3 lectoras · 1 quedada · 1 librería</span>
           </div>
-          <button type="button" onclick="centerOnUserRealGPS()" 
-                  class="chip text-[10px] py-1.5 px-3 bg-amber-500 hover:bg-amber-600 text-stone-950 font-bold rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer transition active:scale-95 shrink-0 border border-amber-600/30">
-            <span>🧭</span> Mi GPS
-          </button>
+
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" onclick="fitAllAranjuezPins()" title="Ver toda la comunidad"
+                    class="chip text-[10px] py-1.5 px-2.5 font-bold rounded-xl shadow-sm cursor-pointer active:scale-95">
+              🗺️ Radar
+            </button>
+            <button type="button" onclick="centerOnUserRealGPS()" 
+                    class="chip text-[10px] py-1.5 px-2.5 bg-amber-500 hover:bg-amber-600 text-stone-950 font-extrabold rounded-xl shadow-md flex items-center gap-1 cursor-pointer transition active:scale-95 border border-amber-600/30">
+              <span>🧭</span> Mi GPS
+            </button>
+          </div>
         </div>
 
-        <!-- Fila Inferior: Filtros de Afinidad -->
-        <div id="map-filters-bar" class="flex items-center gap-1.5 overflow-x-auto hide-sb pt-0.5">
-          <button type="button" onclick="filterMapMarkers('all')" class="chip text-[10px] py-1 ${curFilter === 'all' ? 'on' : ''}">Todos</button>
-          <button type="button" onclick="filterMapMarkers('readers')" class="chip text-[10px] py-1 ${curFilter === 'readers' ? 'on' : ''}">👥 Lectoras</button>
-          <button type="button" onclick="filterMapMarkers('events')" class="chip text-[10px] py-1 ${curFilter === 'events' ? 'on' : ''}">🎟️ Quedadas</button>
-          <button type="button" onclick="filterMapMarkers('spots')" class="chip text-[10px] py-1 ${curFilter === 'spots' ? 'on' : ''}">📍 Librerías</button>
+        <div id="map-filters-bar" class="grid grid-cols-4 gap-1 pt-0.5">
+          <button type="button" onclick="filterMapMarkers('all')" class="chip justify-center text-[10px] py-1 px-1 ${curFilter === 'all' ? 'on' : ''}">Todos</button>
+          <button type="button" onclick="filterMapMarkers('readers')" class="chip justify-center text-[10px] py-1 px-1 ${curFilter === 'readers' ? 'on' : ''}">👥 Lectoras</button>
+          <button type="button" onclick="filterMapMarkers('events')" class="chip justify-center text-[10px] py-1 px-1 ${curFilter === 'events' ? 'on' : ''}">🎟️ Quedadas</button>
+          <button type="button" onclick="filterMapMarkers('spots')" class="chip justify-center text-[10px] py-1 px-1 ${curFilter === 'spots' ? 'on' : ''}">📍 Librerías</button>
         </div>
       </div>
     </div>
   `;
 
-  // Inicializar Leaflet y forzar renderizado de teselas hasta los bordes
   setTimeout(() => {
     initLeafletMapEngine();
     if (leafletMapInstance) {
@@ -2267,6 +2299,52 @@ function renderMapa() {
   }, 100);
 }
 
+// 4. Motor Leaflet
+function initLeafletMapEngine() {
+  const mapContainer = document.getElementById('real-leaflet-map');
+  if (!mapContainer) return;
+
+  if (leafletMapInstance) {
+    leafletMapInstance.remove();
+    leafletMapInstance = null;
+  }
+
+  const defaultLat = 40.0305;
+  const defaultLng = -3.6042;
+
+  leafletMapInstance = L.map('real-leaflet-map', {
+    zoomControl: false
+  }).setView([defaultLat, defaultLng], 14);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(leafletMapInstance);
+
+  L.control.zoom({ position: 'topleft' }).addTo(leafletMapInstance);
+
+  mapMarkersGroup = L.layerGroup().addTo(leafletMapInstance);
+
+  const curFilter = (typeof S !== 'undefined' && S.mapFilter) ? S.mapFilter : 'all';
+  cargarPinesLiterariosEnMapa(curFilter);
+  renderUserMarker(defaultLat, defaultLng);
+  fitAllAranjuezPins(defaultLat, defaultLng);
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const uLat = pos.coords.latitude;
+        const uLng = pos.coords.longitude;
+        renderUserMarker(uLat, uLng);
+        fitAllAranjuezPins(uLat, uLng);
+      },
+      () => {},
+      { enableHighAccuracy: false, timeout: 6000 }
+    );
+  }
+}
+
+// 5. Justo debajo empieza: function cargarPinesLiterariosEnMapa(filter = 'all') {
 function filterMapMarkers(cat = 'all') {
   if (typeof S !== 'undefined') S.mapFilter = cat;
   
@@ -2353,7 +2431,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(leafletMapInstance);
 
-  L.control.zoom({ position: 'bottomright' }).addTo(leafletMapInstance);
+  L.control.zoom({ position: 'topright' }).addTo(leafletMapInstance);
 
   mapMarkersGroup = L.layerGroup().addTo(leafletMapInstance);
 
@@ -4197,13 +4275,41 @@ if (typeof FEED_ITEMS !== 'undefined' && !FEED_ITEMS.some(i => i.type === 'artic
   FEED_ITEMS.splice(2, 0, EDITORIAL_ARTICLES[0]);
 }
 
-function toggleArticleBody(postId) {
-  const bodyEl = document.getElementById(`article-body-${postId}`);
-  const btnEl = document.getElementById(`btn-art-${postId}`);
+function toggleArticleBody(btnOrId, explicitId) {
+  let btnEl = null;
+  let bodyEl = null;
+
+  // 1. Detección relativa por elemento pulsado (infalible en móviles) o por ID
+  if (btnOrId && typeof btnOrId === 'object' && btnOrId.nodeType) {
+    btnEl = btnOrId;
+    const card = btnEl.closest('.card') || btnEl.closest('article');
+    if (card) {
+      bodyEl = card.querySelector('[data-article-body]') || (explicitId ? document.getElementById(`article-body-${explicitId}`) : null);
+    }
+  } else {
+    const id = explicitId || btnOrId;
+    bodyEl = document.getElementById(`article-body-${id}`);
+    btnEl = document.getElementById(`btn-art-${id}`);
+  }
+
   if (!bodyEl) return;
-  const isHidden = bodyEl.classList.toggle('hidden');
-  if (btnEl) {
-    btnEl.textContent = isHidden ? 'Leer artículo completo ↓' : 'Recoger artículo ↑';
+
+  // 2. Alternar visibilidad con soporte de clases e inline style
+  const isCurrentlyHidden = bodyEl.classList.contains('hidden') || bodyEl.style.display === 'none';
+
+  if (isCurrentlyHidden) {
+    bodyEl.classList.remove('hidden');
+    bodyEl.style.display = 'block';
+    if (btnEl) btnEl.textContent = 'Recoger artículo ↑';
+
+    // Acompañar el scroll en móvil suavemente para centrar la lectura
+    setTimeout(() => {
+      bodyEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 80);
+  } else {
+    bodyEl.classList.add('hidden');
+    bodyEl.style.display = 'none';
+    if (btnEl) btnEl.textContent = 'Leer artículo completo ↓';
   }
 }
 window.toggleArticleBody = toggleArticleBody;
