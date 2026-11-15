@@ -462,31 +462,39 @@ body {
 
 <div id="app" class="w-full max-w-md h-[100dvh] sm:h-[840px] flex flex-col relative overflow-hidden sm:rounded-[38px] sm:border shadow-2xl" style="background:var(--surface); border-color:var(--line);">
 <!-- PANTALLA DE AUTENTICACIÓN (LOGIN / REGISTRO) -->
-    <div id="modal-auth" class="absolute inset-0 z-50 flex flex-col justify-center items-center p-6 bg-stone-950 text-stone-100 transition-opacity duration-300">
-      <div class="w-full max-w-sm space-y-6">
+   <div id="modal-auth" class="absolute inset-0 z-50 flex flex-col justify-center items-center p-6 bg-stone-950 text-stone-100 transition-opacity duration-300">
+      <div class="w-full max-w-sm space-y-5">
         <div class="text-center space-y-2">
-          <div class="w-16 h-16 mx-auto bg-rose-900 rounded-full flex items-center justify-center text-3xl mb-4 shadow-lg border border-rose-800">📖</div>
+          <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-bold text-emerald-400 mb-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            14 lectores conectados en Aranjuez y Madrid
+          </div>
+          <div class="w-16 h-16 mx-auto bg-rose-900 rounded-full flex items-center justify-center text-3xl mb-2 shadow-lg border border-rose-800">📖</div>
           <h2 class="serif text-3xl font-bold">Book Affair</h2>
-          <p class="text-sm text-stone-400">Tu comunidad literaria te espera.</p>
+          <p class="text-xs text-stone-400">Donde las historias subrayadas conectan almas lectoras.</p>
         </div>
         
-        <div class="space-y-4 pt-4">
+        <div class="space-y-3.5 pt-2">
           <div>
             <label class="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1.5 pl-1">Correo Electrónico</label>
             <input type="email" id="auth-email" class="w-full p-3.5 rounded-xl bg-stone-900 border border-stone-800 text-white placeholder-stone-600 focus:border-rose-700 focus:outline-none transition" placeholder="lector@ejemplo.com">
           </div>
           <div>
             <label class="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1.5 pl-1">Contraseña</label>
-            <input type="password" id="auth-pass" class="w-full p-3.5 rounded-xl bg-stone-900 border border-stone-800 text-white placeholder-stone-600 focus:border-rose-700 focus:outline-none transition" placeholder="Mínimo 6 caracteres">
+            <input type="password" id="auth-pass" onkeydown="if(event.key==='Enter')loginUser()" class="w-full p-3.5 rounded-xl bg-stone-900 border border-stone-800 text-white placeholder-stone-600 focus:border-rose-700 focus:outline-none transition" placeholder="Mínimo 6 caracteres">
           </div>
         </div>
 
-        <div class="space-y-3 pt-3">
-          <button onclick="loginUser()" class="w-full py-3.5 rounded-full font-bold text-sm bg-rose-800 hover:bg-rose-700 transition shadow-lg text-white">Iniciar Sesión</button>
-          <button onclick="registerUser()" class="w-full py-3.5 rounded-full font-bold text-sm border border-stone-700 text-stone-300 hover:bg-stone-800 transition">Crear cuenta nueva</button>
+        <div class="space-y-2.5 pt-2">
+          <button onclick="loginUser()" class="w-full py-3.5 rounded-full font-bold text-sm bg-rose-800 hover:bg-rose-700 transition shadow-lg text-white cursor-pointer">Iniciar Sesión</button>
+          <button onclick="registerUser()" class="w-full py-3.5 rounded-full font-bold text-xs border border-stone-700 text-stone-300 hover:bg-stone-800 transition cursor-pointer">Crear cuenta nueva</button>
+          <button type="button" onclick="document.getElementById('modal-auth').classList.add('hidden'); if(typeof toast==='function') toast('Explorando Book Affair en modo lector 📖')" class="w-full py-2 text-[11px] font-semibold text-amber-400/90 hover:text-amber-300 underline cursor-pointer">
+            Explorar primero como lector invitado →
+          </button>
         </div>
       </div>
     </div>
+
   <!-- CABECERA -->
   <header class="flex items-center justify-between px-4 py-2.5 border-b shrink-0 z-20" style="background:var(--surface); border-color:var(--line);">
     <div class="flex items-center gap-2.5 cursor-pointer" onclick="go('inicio')">
@@ -688,11 +696,8 @@ body {
       </button>
     </div>
 
-<button onclick="publishUniversalContent()" 
-  class="ml-auto px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md transition shrink-0 whitespace-nowrap">
-  <span>Publicar</span>
-  <span>🚀</span>
-</button>
+</div>
+  </div>
 
   <!-- MODAL MATCH: COMPLICIDAD DE LECTURA -->
   <div id="modal-match" class="absolute inset-0 hidden z-50 flex items-center justify-center p-5" style="background:rgba(10,12,18,0.85); backdrop-filter:blur(8px);">
@@ -727,24 +732,40 @@ body {
     </div>
   </div>
 
-  <!-- MODAL SUSURRO -->
-  <div id="modal-whisper" class="absolute inset-0 hidden z-50 flex items-end" style="background:rgba(0,0,0,0.6);" onclick="if(event.target===this)closeWhisper()">
-    <div class="w-full rounded-t-3xl p-5 space-y-3 pop" style="background:var(--surface); border-top:1px solid var(--line);">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="serif text-lg font-bold" id="wh-title">Susurrar cita</h2>
-          <p class="text-xs" style="color:var(--muted)" id="wh-sub"></p>
-        </div>
-        <button class="icon-btn" onclick="closeWhisper()">✕</button>
+  <!-- MODAL MATCH: COMPLICIDAD DE LECTURA -->
+  <div id="modal-match" class="absolute inset-0 hidden z-50 flex items-center justify-center p-5" style="background:rgba(10,12,18,0.85); backdrop-filter:blur(8px);">
+    <div class="w-full max-w-sm rounded-3xl p-6 text-center space-y-4 pop border shadow-2xl relative" style="background:var(--surface); border-color:var(--gold);">
+      <div class="inline-block px-3 py-1 rounded-full text-xs font-black tracking-widest text-amber-950 dark:text-amber-200 uppercase shadow-md bg-gradient-to-r from-amber-300 to-amber-500">
+        ✨ ¡Complicidad de Lectura Hallada! ✨
       </div>
-      <div class="flex gap-2 overflow-x-auto hide-sb py-1" id="wh-chips"></div>
-      <textarea id="wh-text" rows="3" maxlength="280" placeholder="Escribe algo sobre este libro..." class="w-full rounded-xl p-3 text-sm outline-none resize-none" style="background:var(--card);border:1px solid var(--line);color:var(--ink)"></textarea>
-      <div class="flex items-center justify-between pt-1">
-        <span class="text-[11px]" style="color:var(--muted)">Inicia un chat con contexto directo</span>
-        <button class="btn" onclick="sendWhisper()">Enviar susurro ✉</button>
+      <div class="flex items-center justify-center gap-3 pt-2">
+        <div class="w-20 h-20 rounded-full p-1 border-2 border-amber-500 shadow-lg relative">
+          <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" class="w-full h-full rounded-full object-cover"/>
+        </div>
+        <div class="w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-md text-white" style="background:linear-gradient(135deg,var(--maroon),var(--accent))">
+          📖
+        </div>
+        <div class="w-20 h-20 rounded-full p-1 border-2 border-rose-500 shadow-lg">
+          <img id="match-photo" src="" class="w-full h-full rounded-full object-cover"/>
+        </div>
+      </div>
+      <div>
+        <h3 class="serif text-xl font-bold" id="match-name"></h3>
+        <p class="text-xs font-bold text-amber-700 dark:text-amber-400 mt-0.5" id="match-af"></p>
+        <p class="text-xs mt-2 px-2 leading-relaxed" style="color:var(--muted)" id="match-desc"></p>
+      </div>
+      <div class="space-y-2 pt-2">
+        <button class="btn w-full py-3 text-xs font-bold shadow-lg" onclick="startMatchChat()">
+          Susurrar cita y romper el hielo ✉️
+        </button>
+        <button class="btn-ghost w-full py-2.5 text-xs font-semibold" onclick="closeMatchModal()">
+          Seguir descubriendo almas lectoras
+        </button>
       </div>
     </div>
   </div>
+
+  
 
   <!-- MODAL DE DETALLE DE LIBRO (FILMAFFINITY) -->
 
@@ -1356,15 +1377,38 @@ function getReadingCountdownText() {
 function renderQuickReadCard() {
   const isRead = S.user.readToday;
   const countdown = getReadingCountdownText();
+  const daysLabels = ['L','M','X','J','V','S','D'];
+  const todayIdx = (new Date().getDay() + 6) % 7;
+  const streakCount = S.user.streak || 0;
+
+  const weekChainHtml = daysLabels.map((d, idx) => {
+    const diff = todayIdx - idx;
+    const isCompleted = (diff === 0 && isRead) || (diff > 0 && diff < streakCount + (isRead ? 0 : 1));
+    const isToday = diff === 0;
+    return `
+      <div class="flex flex-col items-center gap-0.5">
+        <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold border transition ${
+          isCompleted 
+            ? 'bg-amber-500 border-amber-600 text-stone-950 shadow-sm' 
+            : isToday 
+              ? 'border-rose-700 text-rose-800 dark:text-rose-400 animate-pulse' 
+              : 'border-stone-300 dark:border-stone-700 text-stone-400'
+        }">
+          ${isCompleted ? '✓' : d}
+        </div>
+      </div>`;
+  }).join('');
+
+  const curHour = S.user.readingHour || '21:30';
 
   return `
-    <div class="mx-4 my-3 p-4 rounded-2xl border transition-all duration-300 ${
+    <div class="mx-4 mt-3 mb-2 p-3.5 rounded-2xl border transition-all duration-300 ${
       isRead
         ? 'bg-stone-50 dark:bg-stone-900/60 border-stone-200 dark:border-stone-800'
         : 'bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-transparent border-amber-500/40 shadow-sm'
     }">
       <div class="flex items-start justify-between gap-3">
-        <div class="space-y-1 min-w-0">
+        <div class="space-y-1 min-w-0 flex-1">
           <div class="flex items-center gap-1.5">
             <span class="${isRead ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400 animate-pulse'} text-base">
               ${isRead ? '✓' : '🔥'}
@@ -1376,17 +1420,10 @@ function renderQuickReadCard() {
           </div>
           <p class="text-xs text-stone-600 dark:text-stone-400 leading-snug">
             ${isRead 
-              ? `Racha protegida: <strong>${S.user.streak} días</strong> consecutivos. ¡Has nutrido tu hábito!` 
-              : `Con <strong>1 página basta</strong> para mantener tu racha activa.`
+              ? `Racha protegida: <strong>${S.user.streak} días</strong> seguidos. ¡Has nutrido tu canon!` 
+              : `Con <strong>1 página basta</strong> para mantener viva tu cadena de lectura.`
             }
           </p>
-          <div class="flex items-center gap-2 pt-0.5 text-[10px] text-stone-500 dark:text-stone-400 font-medium">
-            <span>⏳ ${countdown}</span>
-            <span>·</span>
-            <button type="button" onclick="configurarHoraLectura()" class="underline hover:text-amber-700 dark:hover:text-amber-400 cursor-pointer">
-              Cambiar hora
-            </button>
-          </div>
         </div>
 
         ${!isRead ? `
@@ -1402,9 +1439,148 @@ function renderQuickReadCard() {
           </div>
         `}
       </div>
+
+      <!-- Cadena visual de 7 días (Aversión a la pérdida) -->
+      <div class="flex items-center justify-between pt-2.5 mt-2.5 border-t border-stone-200/70 dark:border-stone-800">
+        <div class="flex items-center gap-1.5">${weekChainHtml}</div>
+        <div class="flex items-center gap-1">
+          ${[['08:30','☕'],['15:30','🌤️'],['21:30','🌙']].map(([h, icon]) => `
+            <button type="button" onclick="setReadingHourDirect('${h}')" 
+              class="text-[9px] font-bold px-2 py-0.5 rounded-full border transition cursor-pointer ${curHour===h ? 'bg-amber-500/20 border-amber-500 text-amber-900 dark:text-amber-300' : 'border-transparent text-stone-400 hover:text-stone-600'}"
+              title="Fijar recordatorio a las ${h}">
+              ${icon} ${h}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div class="text-[10px] text-stone-500 dark:text-stone-400 pt-1">⏳ ${countdown}</div>
     </div>
   `;
 }
+
+function setReadingHourDirect(h) {
+  S.user.readingHour = h;
+  localStorage.setItem('ba_reading_hour', h);
+  toast(`Ritual de lectura fijado a las ${h} ⏰`);
+  if (S.tab === 'inicio') renderInicio();
+}
+window.setReadingHourDirect = setReadingHourDirect;
+
+function renderDailyDuelCard() {
+  const total = S.votesDuel.papel + S.votesDuel.digital;
+  const pctPapel = Math.round((S.votesDuel.papel / total) * 100);
+  const pctDigital = 100 - pctPapel;
+  const voted = S.myVoteDuel;
+
+  return `
+    <div class="mx-4 mb-3 p-3.5 rounded-2xl card space-y-2.5 shadow-sm">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-rose-900/10 text-rose-800 dark:text-amber-400">
+          ⚡ Dilema Literario del Día
+        </span>
+        <span class="text-[10px] font-bold" style="color:var(--muted)">${total.toLocaleString()} votos hoy</span>
+      </div>
+      <p class="serif text-sm font-bold leading-snug">
+        Para una primera cita literaria: ¿regalarías un libro dedicado a lápiz en papel o compartirías tu biblioteca digital subrayada?
+      </p>
+      ${!voted ? `
+        <div class="grid grid-cols-2 gap-2 pt-0.5">
+          <button type="button" onclick="voteDailyDuel('papel')" class="btn-ghost text-xs py-2 font-bold hover:border-rose-800 cursor-pointer">
+            📖 Papel y lápiz
+          </button>
+          <button type="button" onclick="voteDailyDuel('digital')" class="btn-ghost text-xs py-2 font-bold hover:border-rose-800 cursor-pointer">
+            ⚡ Biblioteca digital
+          </button>
+        </div>
+      ` : `
+        <div class="space-y-1.5 pt-0.5">
+          <div class="flex justify-between text-[11px] font-bold">
+            <span style="color:var(--maroon)">📖 Papel y lápiz (${pctPapel}%) ${voted==='papel'?'✓':''}</span>
+            <span style="color:var(--muted)">⚡ Digital (${pctDigital}%) ${voted==='digital'?'✓':''}</span>
+          </div>
+          <div class="w-full h-2.5 rounded-full overflow-hidden flex" style="background:var(--line)">
+            <div style="width:${pctPapel}%; background:var(--maroon)" class="h-full transition-all duration-500"></div>
+          </div>
+          <p class="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
+            ✨ Coincides con Laura Martínez (96% afín) y Marcos Ruiz en este dilema.
+          </p>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function voteDailyDuel(choice) {
+  if (S.myVoteDuel) return;
+  S.myVoteDuel = choice;
+  S.votesDuel[choice]++;
+  S.quizScore = (S.quizScore || 280) + 10;
+  toast('¡Opinión registrada en el Dilema del Día! +10 pts de erudición ✨');
+  renderInicio();
+}
+window.voteDailyDuel = voteDailyDuel;
+
+function setReadingHourDirect(h) {
+  S.user.readingHour = h;
+  localStorage.setItem('ba_reading_hour', h);
+  toast(`Ritual de lectura fijado a las ${h} ⏰`);
+  if (S.tab === 'inicio') renderInicio();
+}
+window.setReadingHourDirect = setReadingHourDirect;
+
+function renderDailyDuelCard() {
+  const total = S.votesDuel.papel + S.votesDuel.digital;
+  const pctPapel = Math.round((S.votesDuel.papel / total) * 100);
+  const pctDigital = 100 - pctPapel;
+  const voted = S.myVoteDuel;
+
+  return `
+    <div class="mx-4 mb-3 p-3.5 rounded-2xl card space-y-2.5 shadow-sm">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-rose-900/10 text-rose-800 dark:text-amber-400">
+          ⚡ Dilema Literario del Día
+        </span>
+        <span class="text-[10px] font-bold" style="color:var(--muted)">${total.toLocaleString()} votos hoy</span>
+      </div>
+      <p class="serif text-sm font-bold leading-snug">
+        Para una primera cita literaria: ¿regalarías un libro dedicado a lápiz en papel o compartirías tu biblioteca digital subrayada?
+      </p>
+      ${!voted ? `
+        <div class="grid grid-cols-2 gap-2 pt-0.5">
+          <button type="button" onclick="voteDailyDuel('papel')" class="btn-ghost text-xs py-2 font-bold hover:border-rose-800 cursor-pointer">
+            📖 Papel y lápiz
+          </button>
+          <button type="button" onclick="voteDailyDuel('digital')" class="btn-ghost text-xs py-2 font-bold hover:border-rose-800 cursor-pointer">
+            ⚡ Biblioteca digital
+          </button>
+        </div>
+      ` : `
+        <div class="space-y-1.5 pt-0.5">
+          <div class="flex justify-between text-[11px] font-bold">
+            <span style="color:var(--maroon)">📖 Papel y lápiz (${pctPapel}%) ${voted==='papel'?'✓':''}</span>
+            <span style="color:var(--muted)">⚡ Digital (${pctDigital}%) ${voted==='digital'?'✓':''}</span>
+          </div>
+          <div class="w-full h-2.5 rounded-full overflow-hidden flex" style="background:var(--line)">
+            <div style="width:${pctPapel}%; background:var(--maroon)" class="h-full transition-all duration-500"></div>
+          </div>
+          <p class="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold">
+            ✨ Coincides con Laura Martínez (96% afín) y Marcos Ruiz en este dilema.
+          </p>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function voteDailyDuel(choice) {
+  if (S.myVoteDuel) return;
+  S.myVoteDuel = choice;
+  S.votesDuel[choice]++;
+  S.quizScore = (S.quizScore || 280) + 10;
+  toast('¡Opinión registrada en el Dilema del Día! +10 pts de erudición ✨');
+  renderInicio();
+}
+window.voteDailyDuel = voteDailyDuel;
 
 function renderInicio(){
   const el = document.getElementById('v-inicio');
@@ -1726,9 +1902,14 @@ function renderInicio(){
                     ${ic('msg','w-3.5 h-3.5')} <span>Debatir artículo</span>
                   </button>
                 </div>
-                <button type="button" id="btn-art-${item.postId}" onclick="toggleArticleBody('${item.postId}')" class="text-xs font-extrabold underline cursor-pointe
+               <button type="button" id="btn-art-${item.postId}" 
+                        onclick="event.stopPropagation(); toggleArticleBody(this, '${item.postId}')" 
+                        class="text-xs font-extrabold py-1 px-2.5 rounded-lg transition active:scale-95 cursor-pointer underline hover:bg-stone-500/10" 
+                        style="color:var(--maroon)">
                   Leer artículo completo ↓
                 </button>
+              </div>
+
               <!-- Hilo público de debate del artículo -->
               <div id="thread-box-${item.postId}" class="hidden mt-3 pt-3 border-t border-stone-200 dark:border-stone-800 space-y-2.5">
                 <div id="thread-comments-${item.postId}" class="space-y-2 text-xs"></div>
@@ -1745,7 +1926,8 @@ function renderInicio(){
     }).join('');
 
     const quickCard = renderQuickReadCard();
-el.innerHTML = feedSwitch + stories + quickCard + feedHtml;
+    const duelCard = renderDailyDuelCard();
+    el.innerHTML = feedSwitch + stories + quickCard + duelCard + feedHtml;
   }
 }
 
@@ -1872,20 +2054,23 @@ function likeReel(id){
 
 function renderBiblioteca(){
   let list = BOOKS.filter(b => {
-    const matchFilter = S.filter === 'all' || (S.filter === 'top' ? b.r >= 9.0 : b.g.toLowerCase().includes(S.filter));
+    const matchFilter = S.filter === 'all' || (S.filter === 'top' ? Number(b.r) >= 9.5 : (b.g || '').toLowerCase().includes(S.filter));
     const matchQuery = !S.q || (b.t + ' ' + b.a).toLowerCase().includes(S.q.toLowerCase());
     return matchFilter && matchQuery;
   });
   if(S.filter === 'top') list.sort((a,b) => b.r - a.r);
 
   const filters = [
-    ['all','Todos los fondos'],
-    ['top','Top Book Affair (★ 9+)'],
-    ['ficción','Ficción'],
-    ['cuentos','Cuentos'],
-    ['realismo','Realismo Mágico'],
-    ['distopía','Distopía']
-  ];
+  ['all','Todos (30)'],
+  ['top','Top ★ 9.5+'],
+  ['clásico','Clásicos'],
+  ['juvenil','Juvenil & Fantasía'],
+  ['ensayo','Ensayo & Psicología'],
+  ['finanzas','Finanzas'],
+  ['deporte','Deporte'],
+  ['infantil','Infantil'],
+  ['ficción','Ficción & Distopía']
+];
 
   document.getElementById('v-biblioteca').innerHTML = `
     <div class="p-4 space-y-3 sticky top-0 z-10" style="background:var(--surface)">
@@ -2158,62 +2343,7 @@ function buyBookAction(partner){
   toast(`Redirigiendo a ${partner} (enlace patrocinado) 📖`);
 }
 
-function closeBookModal(){
-  const modalEl = document.getElementById('modal-book');
-  if (modalEl) {
-    modalEl.classList.add('hidden');
-    modalEl.style.display = 'none'; // <-- Añade esta línea
-  }
-}
 
-async function rateBook(bookId, score) {
-  try {
-    const numericBookId = parseInt(bookId, 10);
-    const numericScore = parseInt(score, 10);
-    
-    // 1. Obtener el usuario activo real autenticado
-    let activeUser = 'kurko';
-    if (typeof S !== 'undefined' && S.user) {
-      activeUser = (S.user.id || S.user.name || S.user.email || 'kurko').toLowerCase();
-    }
-
-    console.log(`-> Votando libro ID ${numericBookId} con nota ${numericScore} (Usuario: ${activeUser})`);
-
-    // 2. Actualización optimista inmediata en memoria local
-    if (!S.myRatings) S.myRatings = {};
-    S.myRatings[numericBookId] = numericScore;
-    S.myRatings[String(numericBookId)] = numericScore;
-
-    if (typeof toast === 'function') toast(`Has calificado con ${numericScore}/10.`);
-
-    // 3. Refrescar visualmente la pantalla
-    if (typeof showBookDetail === 'function') showBookDetail(numericBookId);
-    if (typeof renderBiblioteca === 'function') renderBiblioteca();
-
-    // 4. Guardar en Supabase (UPSERT)
-    if (typeof sbClient !== 'undefined') {
-      const { data, error } = await sbClient
-        .from('book_ratings')
-        .upsert(
-          { 
-            user_id: activeUser, 
-            book_id: numericBookId, 
-            rating: numericScore 
-          },
-          { onConflict: 'user_id,book_id' }
-        );
-
-      if (error) {
-        console.error('Error al guardar calificación en Supabase:', error.message);
-      } else {
-        console.log(`Calificación ${numericScore}/10 persistida con éxito en Supabase.`);
-      }
-    }
-  } catch (err) {
-    console.error('Excepción en rateBook:', err);
-  }
-}
-window.rateBook = rateBook;
 // ==============================================================================
 // 🧭 GEOLOCALIZACIÓN REAL DEL DISPOSITIVO (GPS + Supabase)
 // ==============================================================================
@@ -2221,6 +2351,7 @@ window.rateBook = rateBook;
 
 let leafletMapInstance = null;
 let userMarkerInstance = null;
+let mapMarkersGroup = null;
 
 // 1. Aquí arriba sigue intacta centerOnUserRealGPS()
 
@@ -2408,14 +2539,7 @@ function centerOnUserRealGPS() {
   );
 }
 
-function initLeafletMapEngine() {
-  const mapContainer = document.getElementById('real-leaflet-map');
-  if (!mapContainer) return;
 
-  if (leafletMapInstance) {
-    leafletMapInstance.remove();
-    leafletMapInstance = null;
-  }
 
 // Coordenadas iniciales (Centro de Aranjuez)
 const defaultLat = 40.0305;
@@ -2552,15 +2676,21 @@ function cargarPinesLiterariosEnMapa(filter = 'all') {
       const marker = L.marker([p.lat, p.lng], { icon: customIcon }).addTo(mapMarkersGroup);
 
       if (p.type === 'readers') {
-        marker.bindPopup(`
-          <div style="font-family:sans-serif; min-width:170px; padding:2px;">
+      marker.bindPopup(`
+          <div style="font-family:sans-serif; min-width:185px; padding:2px;">
             <b style="font-size:13px; color:#1c1917;">${p.name}</b> · <span style="color:#be123c; font-weight:bold;">${p.affinity}</span><br>
             <span style="font-size:11px; color:#57534e;">📖 ${p.book}</span><br>
-            <span style="font-size:10px; color:#78716c; display:block; margin-bottom:8px;">📍 ${p.state}</span>
-            <button onclick="comoLlegar(${p.lat}, ${p.lng}, '${p.name}')" 
-              style="width:100%; background:#2563eb; color:white; font-size:11px; font-weight:bold; padding:6px 10px; border-radius:8px; border:none; cursor:pointer;">
-              🚶 Cómo llegar (A pie)
-            </button>
+            <span style="font-size:10px; color:#78716c; display:block; margin-bottom:8px;">📍 ${p.state} · 🛡️ Radio ~200m</span>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
+              <button onclick="openWhisper('${p.id}', 1, '${p.book}')" 
+                style="background:#781024; color:white; font-size:10px; font-weight:bold; padding:6px 6px; border-radius:8px; border:none; cursor:pointer;">
+                💌 Susurrar
+              </button>
+              <button onclick="comoLlegar(${p.lat}, ${p.lng}, '${p.name}')" 
+                style="background:#2563eb; color:white; font-size:10px; font-weight:bold; padding:6px 6px; border-radius:8px; border:none; cursor:pointer;">
+                🚶 Ir a pie
+              </button>
+            </div>
           </div>
         `);
       } else {
@@ -3057,96 +3187,7 @@ function renderQuiz(){
 // LÓGICA DE TARJETAS DESLIZABLES (SWIPE R+J)
 // ===============================================
 
-function initTinderGesture() {
-  const card = document.getElementById('active-swipe-card');
-  if (!card) return;
 
-  let startX = 0;
-  let currentX = 0;
-  let isDragging = false;
-
-  const badgeLike = document.getElementById('badge-like');
-  const badgeNope = document.getElementById('badge-nope');
-
-  function onDragStart(e) {
-    isDragging = true;
-    startX = e.type.includes('mouse') ? e.pageX : e.touches[0].clientX;
-    card.style.transition = 'none'; // Quitar transición para que siga el dedo instantáneamente
-  }
-
-  function onDragMove(e) {
-    if (!isDragging) return;
-    const x = e.type.includes('mouse') ? e.pageX : e.touches[0].clientX;
-    currentX = x - startX;
-    
-    // Rotación suave basada en la distancia de arrastre
-    const rotate = currentX * 0.05;
-    card.style.transform = `translate(${currentX}px, 0) rotate(${rotate}deg)`;
-
-    // Mostrar los sellos de "ME INTERESA" o "PASAR" según la dirección
-    if (currentX > 0) {
-      badgeLike.style.opacity = Math.min(currentX / 100, 1);
-      badgeNope.style.opacity = 0;
-    } else {
-      badgeNope.style.opacity = Math.min(Math.abs(currentX) / 100, 1);
-      badgeLike.style.opacity = 0;
-    }
-  }
-
-  function onDragEnd() {
-    if (!isDragging) return;
-    isDragging = false;
-    card.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-
-    // Umbral de 100px para considerar que la tarjeta ha sido deslizada
-    if (currentX > 100) {
-      triggerSwipeAction('like');
-    } else if (currentX < -100) {
-      triggerSwipeAction('nope');
-    } else {
-      // Si no supera el umbral, vuelve al centro como un resorte (Snap back)
-      card.style.transform = 'translate(0px, 0px) rotate(0deg)';
-      badgeLike.style.opacity = 0;
-      badgeNope.style.opacity = 0;
-    }
-  }
-
-  // Eventos para ratón (escritorio)
-  card.addEventListener('mousedown', onDragStart);
-  window.addEventListener('mousemove', onDragMove);
-  window.addEventListener('mouseup', onDragEnd);
-
-  // Eventos para táctil (móvil)
-  card.addEventListener('touchstart', onDragStart, {passive: true});
-  window.addEventListener('touchmove', onDragMove, {passive: true});
-  window.addEventListener('touchend', onDragEnd);
-}
-
-function triggerSwipeAction(action) {
-  const card = document.getElementById('active-swipe-card');
-  if (!card) return;
-
-  // Animar la tarjeta saliendo de la pantalla
-  const moveX = action === 'like' ? window.innerWidth : -window.innerWidth;
-  card.style.transition = 'transform 0.4s ease, opacity 0.4s ease';
-  card.style.transform = `translate(${moveX}px, 0) rotate(${moveX * 0.05}deg)`;
-  card.style.opacity = '0';
-
-  // Esperar a que termine la animación y avanzar al siguiente perfil
-  setTimeout(() => {
-    if (action === 'like') {
-      toast('¡Complicidad enviada! 💘');
-    } else {
-      toast('Has pasado de perfil');
-    }
-    
-    // Avanzar el índice y volver a renderizar
-    if (typeof S.rjCrushIndex !== 'undefined') {
-      S.rjCrushIndex++;
-    }
-    renderQuiz();
-  }, 400);
-}
 
 function openQuizGame(screen){
   S.quizScreen = screen;
@@ -3572,6 +3613,8 @@ async function publishUniversalContent(){
 let curWhisper = null;
 function openWhisper(targetUser, bookId, quoteText) {
   try {
+    currentWhisperUserKey = targetUser || 'laura';
+    currentWhisperUserName = (typeof USERS_DATA !== 'undefined' && USERS_DATA[currentWhisperUserKey]) ? USERS_DATA[currentWhisperUserKey].name : 'Lector afín';
     // 1. Localizar el contenedor del modal de susurros
     const whisperEl = document.getElementById('modal-whisper') || document.getElementById('whisper-modal');
     if (!whisperEl) {
@@ -3655,72 +3698,7 @@ function closeWhisper() {
 window.closeWhisper = closeWhisper;
 
 
-function sendWhisperMessage() {
-  const txtEl = document.getElementById('whisper-text');
-  const txt = txtEl ? txtEl.value.trim() : '';
 
-  if (!txt) {
-    if (typeof toast === 'function') toast('Escribe unas palabras antes de enviar tu susurro ✒️');
-    return;
-  }
-
-  // 1. Identificar la clave del hilo en THREADS (marcos o laura)
-  const isMarcos = currentWhisperUserKey === 'marcos' || 
-                   (currentWhisperUserName && currentWhisperUserName.toLowerCase().includes('marcos'));
-  const targetKey = isMarcos ? 'marcos' : 'laura';
-
-  const myUserName = (typeof S !== 'undefined' && S.user && S.user.name) ? S.user.name : 'Kur-ko';
-  const whisperFormatted = `✨ [Susurro]: "${txt}"`;
-
-  // 2. Objeto omnicompatible: cubre todos los nombres de campos de texto y alineación
-  const msgObj = {
-    // Campos de texto para evitar 'undefined'
-    text: whisperFormatted,
-    m: whisperFormatted,
-    msg: whisperFormatted,
-    content: whisperFormatted,
-    body: whisperFormatted,
-
-    // Banderas de alineación para ubicar la burbuja a la DERECHA
-    mine: true,
-    isMe: true,
-    me: true,
-    from: 'me',
-    sender: 'me',
-    user: (typeof S !== 'undefined' && S.user && S.user.id) ? S.user.id : 'kurko',
-    userName: myUserName,
-    time: 'Ahora'
-  };
-
-  // 3. Inserción en la estructura de datos local (THREADS)
-  if (typeof THREADS !== 'undefined') {
-    if (!THREADS[targetKey]) {
-      THREADS[targetKey] = [];
-    }
-    
-    if (Array.isArray(THREADS[targetKey])) {
-      THREADS[targetKey].push(msgObj);
-    } else if (THREADS[targetKey].msgs && Array.isArray(THREADS[targetKey].msgs)) {
-      THREADS[targetKey].msgs.push(msgObj);
-    }
-  }
-
-  // 4. Cerrar la nota adhesiva
-  closeWhisperModal();
-
-  if (typeof toast === 'function') {
-    toast(`¡Susurro entregado a ${currentWhisperUserName || 'la persona lectora'}! 💌`);
-  }
-
-  // 5. Abrir la pantalla del chat con el usuario destino y redibujar
-  if (typeof openWhisper === 'function') {
-    openWhisper(targetKey, 1, null);
-  } else if (typeof openChat === 'function') {
-    openChat(targetKey);
-  } else if (typeof go === 'function') {
-    go('mensajes');
-  }
-}
 let activeRackWord = '';
 function addRackLetter(l){
   activeRackWord += l;
@@ -3819,6 +3797,34 @@ function renderPerfil(){
         <button class="btn w-full mt-2" onclick="logReadingSession()" ${S.user.readToday?'disabled':''}>
           ${S.user.readToday ? 'Lectura de hoy registrada ✓' : '+ Registrar 15 min de lectura'}
         </button>
+      </div>
+      <div class="card p-4 space-y-2.5">
+        <div class="flex justify-between items-center text-xs">
+          <span class="font-bold uppercase tracking-wider" style="color:var(--maroon)">🖋️ Mi Canon Personal</span>
+          <span class="text-[10px]" style="color:var(--muted)">${Object.keys(S.myRatings || {}).length} obras evaluadas</span>
+        </div>
+        <div class="space-y-2">
+          ${Object.entries(S.myRatings || {}).map(([bId, score]) => {
+            const ratedBook = bookOf(bId);
+            return `
+              <div onclick="showBookDetail('${ratedBook.id}')" class="flex items-center justify-between p-2 rounded-xl border cursor-pointer hover:border-rose-800 transition" style="background:var(--card-subtle); border-color:var(--line)">
+                <div class="min-w-0 pr-2">
+                  <span class="text-xs font-bold block truncate">📖 ${esc(ratedBook.t)}</span>
+                  <span class="text-[10px]" style="color:var(--muted)">${esc(ratedBook.a)}</span>
+                </div>
+                <span class="px-2 py-0.5 rounded-full text-xs font-black shrink-0" style="background:var(--maroon); color:#fff">★ ${score}/10</span>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="pt-2 pb-6 text-center space-y-3">
+        <button type="button" onclick="logoutUser()" class="btn-ghost text-xs w-full py-2.5">
+          Cerrar sesión de cuenta
+        </button>
+        <p class="quote text-[11px] text-stone-400 italic">
+          “Dedicated to Bibi & Amelia, the real BA behind this story.”
+        </p>
       </div>
     </div>`;
 }
@@ -3932,14 +3938,7 @@ function configurarHoraLectura() {
 toggleTheme();
 go('inicio');
 
-setTimeout(() => {
-  const badge = document.getElementById('chat-badge');
-  if(badge) {
-    badge.textContent = '3';
-    badge.classList.add('animate-bounce');
-  }
-  toast('✨ ¡Sofía Bécquer ha conectado contigo por "Cien años de soledad"! 📖');
-}, 3200);
+
 // ===============================================
 // SISTEMA DE AUTENTICACIÓN (SUPABASE AUTH)
 // ===============================================
@@ -4099,11 +4098,7 @@ function sendWhisperMessage() {
   }
 
   // 1. Identificar el destinatario ('marcos' o 'laura')
-  const isMarcos = currentWhisperUserKey === 'marcos' || 
-                   (currentWhisperUserName && currentWhisperUserName.toLowerCase().includes('marcos'));
-  const targetId = isMarcos ? 'marcos' : 'laura';
-
-  const whisperText = `✨ [Susurro]: "${txt}"`;
+const targetId = (typeof THREADS !== 'undefined' && THREADS[currentWhisperUserKey]) ? currentWhisperUserKey : 'laura';
 
   // 2. Insertar en THREADS usando la propiedad exacta 't' y 'me: true'
   if (typeof pushMsg === 'function') {
