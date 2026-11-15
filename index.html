@@ -964,7 +964,9 @@ async function fetchFeedFromDB() {
 
     if (typeof FEED_ITEMS !== 'undefined' && realNotes.length > 0) {
       const existingEvents = FEED_ITEMS.filter(item => item.type === 'event');
-      const articles = typeof EDITORIAL_ARTICLES !== 'undefined' ? EDITORIAL_ARTICLES : [];
+      const articles = (typeof EDITORIAL_ARTICLES !== 'undefined' && Array.isArray(EDITORIAL_ARTICLES))
+  ? EDITORIAL_ARTICLES
+  : [];
       FEED_ITEMS.length = 0;
 
       let evIdx = 0, artIdx = 0;
@@ -2539,48 +2541,6 @@ function centerOnUserRealGPS() {
   );
 }
 
-
-
-// Coordenadas iniciales (Centro de Aranjuez)
-const defaultLat = 40.0305;
-const defaultLng = -3.6042;
-
-  leafletMapInstance = L.map('real-leaflet-map', {
-    zoomControl: false
-  }).setView([defaultLat, defaultLng], 14);
-
-// Capa cartográfica editorial limpia y gratuita (sin API keys ni marcas de agua)
-L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors, Tiles style by Humanitarian OSM Team',
-  maxZoom: 19
-}).addTo(leafletMapInstance);
-
-  L.control.zoom({ position: 'topright' }).addTo(leafletMapInstance);
-
-  mapMarkersGroup = L.layerGroup().addTo(leafletMapInstance);
-
-  // 1. Cargar pines y avatares del piloto
-  cargarPinesLiterariosEnMapa();
-
-  // 2. Colocar de inmediato tu pin activo (Kur-ko) en el centro
-  renderUserMarker(defaultLat, defaultLng);
-
-  // 3. Si el dispositivo tiene GPS disponible, reubicar a tu posición real
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const uLat = pos.coords.latitude;
-        const uLng = pos.coords.longitude;
-        leafletMapInstance.setView([uLat, uLng], 15);
-        renderUserMarker(uLat, uLng);
-      },
-      (err) => {
-        console.log("GPS no disponible de inmediato, usando posición inicial fija.");
-      },
-      { enableHighAccuracy: false, timeout: 6000 }
-    );
-  }
-}
 
 function cargarPinesLiterariosEnMapa(filter = 'all') {
   if (!mapMarkersGroup) return;
@@ -4264,6 +4224,9 @@ const EDITORIAL_ARTICLES = [
     likes: 53
   }
 ];
+if (typeof fetchFeedFromDB === 'function' && typeof sbClient !== 'undefined') {
+  fetchFeedFromDB();
+}
 
 // Insertar el primer artículo en el feed inicial por defecto
 if (typeof FEED_ITEMS !== 'undefined' && !FEED_ITEMS.some(i => i.type === 'article')) {
