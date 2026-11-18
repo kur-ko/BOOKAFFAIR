@@ -1,0 +1,112 @@
+-- ============================================================================
+-- HITO P0.1: IDENTIDAD REAL (UUID), PERFIL AUTOMÁTICO Y PRIVACIDAD (RLS)
+-- ============================================================================
+
+-- 1. Ampliar public.users con campos de perfil y privacidad del rediseño
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS favorite_genres TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS connection_intent TEXT[] DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS profile_visibility VARCHAR(20) DEFAULT 'community'
+    CHECK (profile_visibility IN ('public', 'community', 'private')),
+  ADD COLUMN IF NOT EXISTS show_city BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Privacidad por defecto: sin radar activo ni ciudad fija
+ALTER TABLE public.users ALTER COLUMN is_radar_visible SET DEFAULT FALSE;
+ALTER TABLE public.users ALTER COLUMN city DROP DEFAULT;
+
+-- 2. Función + Trigger: crear perfil real en public.users al registrarse en Auth
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  base_name TEXT;
+  clean_username TEXT;
+BEGIN
+  base_name := COALESCE(NULLIF(trim(split_part(NEW.email, '@', 1)), ''), 'lector');
+  clean_username := left(lower(regexp_replace(base_name, '[^a-zA-Z0-9_]', '', 'g')), 40);
+  IF clean_username = '' THEN
+    clean_username := 'lector';
+  END IF;
+  -- Sufijo de 6 caracteres del UUID para evitar colisiones de username
+  clean_username := clean_username || '_' || substr(NEW.id::text, 1, 6);
+
+  INSERT INTO public.users (id, email, username, display_name, is_radar_visible, show_city)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    clean_username,
+    COALESCE(NEW.raw_user_meta_data->>'display_name', initcap(base_name)),
+    FALSE,
+    FALSE
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_auth_user();
+
+-- 3. Sincronizar cuentas que ya existan en auth.users
+INSERT INTO public.users (id, email, username, display_name, is_radar_visible, show_city)
+SELECT
+  au.id,
+  au.email,
+  COALESCE(NULLIF(left(lower(regexp_replace(split_part(au.email, '@', 1), '[^a-zA-Z0-9_]', '', 'g')), 40), ''), 'lector')
+    || '_' || substr(au.id::text, 1, 6),
+  COALESCE(au.raw_user_meta_data->>'display_name', initcap(split_part(au.email, '@', 1))),
+  FALSE,
+  FALSE
+FROM auth.users au
+ON CONFLICT DO NOTHING;
+
+-- 4. Blindaje RLS en public.users (el correo y ajustes privados solo los lee su titular)
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Usuario lee su propio perfil privado" ON public.users;
+CREATE POLICY "Usuario lee su propio perfil privado"
+  ON public.users FOR SELECT
+  USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Usuario actualiza su propio perfil" ON public.users;
+CREATE POLICY "Usuario actualiza su propio perfil"
+  ON public.users FOR UPDATE
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Usuario inserta su propio perfil" ON public.users;
+CREATE POLICY "Usuario inserta su propio perfil"
+  ON public.users FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+-- 5. Vista pública segura para la comunidad (nunca expone email ni coordenadas exactas)
+CREATE OR REPLACE VIEW public.public_profiles AS
+SELECT
+  u.id,
+  u.username,
+  u.display_name,
+  u.avatar_url,
+  u.bio,
+  CASE WHEN u.show_city THEN u.city ELSE NULL END AS visible_city,
+  u.favorite_genres,
+  u.connection_intent,
+  u.archetype_rj,
+  u.profile_visibility,
+  u.created_at
+FROM public.users u
+WHERE
+  u.profile_visibility = 'public'
+  OR (u.profile_visibility = 'community' AND auth.uid() IS NOT NULL)
+  OR u.id = auth.uid();
+
+GRANT SELECT ON public.public_profiles TO anon, authenticated;

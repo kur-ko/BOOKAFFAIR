@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Book Affair - Comunidad, Citas Literarias y Radar Cultural</title>
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script>
@@ -465,32 +465,35 @@ body {
    <div id="modal-auth" class="absolute inset-0 z-50 flex flex-col justify-center items-center p-6 bg-stone-950 text-stone-100 transition-opacity duration-300">
       <div class="w-full max-w-sm space-y-5">
         <div class="text-center space-y-2">
-          <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-bold text-emerald-400 mb-1">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            14 lectores conectados en Aranjuez y Madrid
-          </div>
           <div class="w-16 h-16 mx-auto bg-rose-900 rounded-full flex items-center justify-center text-3xl mb-2 shadow-lg border border-rose-800">📖</div>
           <h2 class="serif text-3xl font-bold">Book Affair</h2>
-          <p class="text-xs text-stone-400">Donde las historias subrayadas conectan almas lectoras.</p>
+          <p class="text-xs text-stone-400">Los libros nos acercan.</p>
         </div>
-        
-        <div class="space-y-3.5 pt-2">
+
+        <div id="auth-feedback" class="hidden text-xs px-3.5 py-2.5 rounded-xl border leading-snug"></div>
+
+        <div class="space-y-3.5 pt-1">
           <div>
-            <label class="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1.5 pl-1">Correo Electrónico</label>
-            <input type="email" id="auth-email" class="w-full p-3.5 rounded-xl bg-stone-900 border border-stone-800 text-white placeholder-stone-600 focus:border-rose-700 focus:outline-none transition" placeholder="lector@ejemplo.com">
+            <label for="auth-email" class="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1.5 pl-1">Correo Electrónico</label>
+            <input type="email" id="auth-email" autocomplete="email" onkeydown="if(event.key==='Enter')loginUser()" class="w-full p-3.5 rounded-xl bg-stone-900 border border-stone-800 text-white placeholder-stone-600 focus:border-rose-700 focus:outline-none transition" placeholder="lector@ejemplo.com">
           </div>
           <div>
-            <label class="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1.5 pl-1">Contraseña</label>
-            <input type="password" id="auth-pass" onkeydown="if(event.key==='Enter')loginUser()" class="w-full p-3.5 rounded-xl bg-stone-900 border border-stone-800 text-white placeholder-stone-600 focus:border-rose-700 focus:outline-none transition" placeholder="Mínimo 6 caracteres">
+            <label for="auth-pass" class="text-[10px] font-bold text-stone-400 uppercase tracking-wider block mb-1.5 pl-1">Contraseña</label>
+            <input type="password" id="auth-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')loginUser()" class="w-full p-3.5 rounded-xl bg-stone-900 border border-stone-800 text-white placeholder-stone-600 focus:border-rose-700 focus:outline-none transition" placeholder="Mínimo 6 caracteres">
           </div>
         </div>
 
-        <div class="space-y-2.5 pt-2">
-          <button onclick="loginUser()" class="w-full py-3.5 rounded-full font-bold text-sm bg-rose-800 hover:bg-rose-700 transition shadow-lg text-white cursor-pointer">Iniciar Sesión</button>
-          <button onclick="registerUser()" class="w-full py-3.5 rounded-full font-bold text-xs border border-stone-700 text-stone-300 hover:bg-stone-800 transition cursor-pointer">Crear cuenta nueva</button>
-          <button type="button" onclick="document.getElementById('modal-auth').classList.add('hidden'); if(typeof toast==='function') toast('Explorando Book Affair en modo lector 📖')" class="w-full py-2 text-[11px] font-semibold text-amber-400/90 hover:text-amber-300 underline cursor-pointer">
-            Explorar primero como lector invitado →
-          </button>
+        <div class="space-y-2.5 pt-1">
+          <button type="button" id="btn-auth-login" onclick="loginUser()" class="w-full py-3.5 rounded-full font-bold text-sm bg-rose-800 hover:bg-rose-700 transition shadow-lg text-white cursor-pointer">Entrar</button>
+          <button type="button" id="btn-auth-register" onclick="registerUser()" class="w-full py-3.5 rounded-full font-bold text-xs border border-stone-700 text-stone-300 hover:bg-stone-800 transition cursor-pointer">Crear cuenta</button>
+          <div class="flex items-center justify-between pt-1 px-1">
+            <button type="button" onclick="resetPasswordUser()" class="text-[11px] text-stone-400 hover:text-stone-200 underline cursor-pointer">
+              He olvidado mi contraseña
+            </button>
+            <button type="button" onclick="enterGuestMode()" class="text-[11px] font-semibold text-amber-400/90 hover:text-amber-300 underline cursor-pointer">
+              Explorar como invitado →
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -561,7 +564,7 @@ body {
           <circle cx="18" cy="18" r="15" stroke="var(--line)" stroke-width="2.5" fill="none"/>
           <circle id="hdr-ring" cx="18" cy="18" r="15" stroke="var(--maroon)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
         </svg>
-        <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" alt="Kur-ko" class="w-7 h-7 rounded-full object-cover shadow-sm border border-amber-600" />
+        <img id="hdr-avatar" src="" alt="Mi perfil" class="w-7 h-7 rounded-full object-cover shadow-sm border border-amber-600" />
       </button>
     </div>
   </header>
@@ -648,9 +651,9 @@ body {
     <div class="w-full rounded-t-3xl p-5 space-y-4 pop max-h-[94%] overflow-y-auto hide-sb" style="background:var(--surface); border-top:1px solid var(--line);">
       <div class="flex items-center justify-between border-b pb-2" style="border-color:var(--line)">
         <div class="flex items-center gap-2">
-          <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" class="w-8 h-8 rounded-full object-cover border border-amber-600"/>
+          <img id="composer-avatar" src="" alt="Tu avatar" class="w-8 h-8 rounded-full object-cover border border-amber-600"/>
           <div>
-            <span class="text-xs font-bold block leading-tight">Kur-ko</span>
+            <span id="composer-author-name" class="text-xs font-bold block leading-tight">Lector</span>
             <span id="composer-mode-badge" class="text-[9px] font-bold text-stone-500 uppercase">Nota de lectura</span>
           </div>
         </div>
@@ -1044,20 +1047,17 @@ async function reservarPlazaEvento() {
 }
 
 // Cargar automáticamente los datos al iniciar la página
-window.addEventListener('DOMContentLoaded', () => {
-    // ☀️ Forzar modo diurno por defecto
+window.addEventListener('DOMContentLoaded', async () => {
     document.documentElement.classList.remove('dark');
     if (typeof S !== 'undefined') S.dark = false;
     const themeBtn = document.getElementById('theme-btn');
     if (themeBtn && typeof ic === 'function') themeBtn.innerHTML = ic('moon', 'w-4 h-4');
 
-    // 🎯 Scroll inteligente (ocultar al bajar, mostrar al subir)
     if (typeof initSmartScrollHeader === 'function') initSmartScrollHeader();
-
-    // 🎯 Inicializar racha por fechas reales y actualizar cabecera
     if (typeof initHookStreak === 'function') initHookStreak();
     if (typeof updateHeader === 'function') updateHeader();
 
+    await checkSession();
     fetchBooksFromDB();
     fetchEventsFromDB();
     fetchFeedFromDB();
@@ -1343,6 +1343,12 @@ function updateHeader() {
   if (r) {
     r.setAttribute('stroke-dasharray', C);
     r.setAttribute('stroke-dashoffset', C * (1 - pctRead() / 100));
+  }
+
+  const hdrAvatar = document.getElementById('hdr-avatar');
+  if (hdrAvatar && S.user) {
+    hdrAvatar.src = S.user.photo || makeInitialAvatar(S.user.name);
+    hdrAvatar.alt = S.user.name || 'Perfil';
   }
 }
 
@@ -3420,9 +3426,14 @@ const SAMPLE_PHOTOS = [
 ];
 
 function openUniversalComposer(){
+  if (!requireAuth('publicar una nota, cita o vídeo')) return;
   const sel = document.getElementById('composer-book');
   sel.innerHTML = BOOKS.map(b => `<option value="${b.id}">📖 ${b.t}</option>`).join('');
   document.getElementById('composer-text').value = '';
+  const cAv = document.getElementById('composer-avatar');
+  const cName = document.getElementById('composer-author-name');
+  if (cAv) cAv.src = S.user.photo || makeInitialAvatar(S.user.name);
+  if (cName) cName.textContent = S.user.name || 'Lector';
   removeAttachedMedia();
   document.getElementById('modal-composer').classList.remove('hidden');
 }
@@ -3698,11 +3709,31 @@ function playMicroAudio(text){
 }
 
 function renderPerfil(){
-  const b = bookOf(S.user.reading);
+  const container = document.getElementById('v-perfil');
+  if (!container) return;
+
+  if (S.isGuest || !S.user || !S.user.id) {
+    container.innerHTML = `
+      <div class="p-6 text-center space-y-4">
+        <div class="w-16 h-16 mx-auto rounded-full flex items-center justify-center text-3xl" style="background:var(--maroon-soft)">📖</div>
+        <h2 class="serif text-xl font-bold">Modo lector invitado</h2>
+        <p class="text-xs leading-relaxed" style="color:var(--muted)">
+          Puedes explorar el catálogo y el contenido público libremente. Inicia sesión o crea tu cuenta para guardar tu biblioteca, valorar obras, publicar notas o conectar con otros lectores.
+        </p>
+        <button type="button" onclick="openAuthModal('Inicia sesión para acceder a tu perfil y biblioteca personal.')" class="btn w-full py-3">
+          Entrar o crear cuenta
+        </button>
+      </div>`;
+    return;
+  }
+
+  const b = bookOf(S.user.reading || 1);
   const p = pctRead();
   const C = 2 * Math.PI * 15;
+  const visLabels = { public: 'Público', community: 'Solo comunidad', private: 'Privado' };
+  const curVis = S.user.profile_visibility || 'community';
 
-  document.getElementById('v-perfil').innerHTML = `
+  container.innerHTML = `
     <div class="p-5 space-y-4">
       <div class="flex items-center gap-4">
         <div class="relative w-16 h-16 shrink-0">
@@ -3712,59 +3743,79 @@ function renderPerfil(){
               stroke-dasharray="${C}" stroke-dashoffset="${C*(1-p/100)}"/>
           </svg>
           <div class="absolute inset-1.5 rounded-full overflow-hidden shadow-md border-2 border-amber-600">
-            <img src="${S.user.photo}" alt="Kur-ko" class="w-full h-full object-cover" />
+            <img src="${S.user.photo}" alt="${esc(S.user.name)}" class="w-full h-full object-cover" />
           </div>
         </div>
-        <div>
-          <h2 class="serif text-xl font-bold">${S.user.name}</h2>
-          <p class="text-xs" style="color:var(--muted)">${S.user.city} · Lector empedernido</p>
+        <div class="min-w-0 flex-1">
+          <h2 class="serif text-xl font-bold truncate">${esc(S.user.name)}</h2>
+          <p class="text-xs truncate" style="color:var(--muted)">@${esc(S.user.username || 'lector')} · ${S.user.show_city && S.user.city ? esc(S.user.city) : 'Ciudad oculta'}</p>
           <div class="flex gap-1 mt-1.5 flex-wrap">
-            <span class="chip text-[9px]">${S.rjUserTraits[0]}</span>
-            <span class="chip text-[9px]">Café & Novelas</span>
+            <span class="chip text-[9px]">🔒 ${visLabels[curVis] || 'Solo comunidad'}</span>
+            ${S.user.bio ? `<span class="chip text-[9px]">Bio activa</span>` : ''}
           </div>
         </div>
       </div>
 
-      <div class="grid grid-cols-3 gap-2 text-center">
-        <div class="card p-2.5">
-          <div class="text-base font-bold" style="color:var(--maroon)">${S.user.streak} días</div>
-          <div class="text-[10px]" style="color:var(--muted)">Racha activa</div>
-        </div>
-        <div class="card p-2.5">
-          <div class="text-base font-bold" style="color:var(--gold)">9.2</div>
-          <div class="text-[10px]" style="color:var(--muted)">Nota media</div>
-        </div>
-        <div class="card p-2.5">
-          <div class="text-base font-bold" style="color:var(--maroon)">96%</div>
-          <div class="text-[10px]" style="color:var(--muted)">Match Top</div>
-        </div>
-      </div>
+      ${S.user.bio ? `<p class="text-xs leading-relaxed px-1" style="color:var(--ink)">${esc(S.user.bio)}</p>` : ''}
 
-      <div class="card p-4 space-y-2.5">
-        <div class="flex justify-between items-center text-xs">
-          <span class="font-bold uppercase tracking-wider" style="color:var(--maroon)">Leyendo ahora</span>
-          <span class="text-[10px]" style="color:var(--muted)">Pág. ${S.user.page} de 384</span>
+      <!-- EDITAR PERFIL Y PRIVACIDAD REAL (public.users) -->
+      <div class="card p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold uppercase tracking-wider" style="color:var(--maroon)">⚙️ Mi Perfil y Privacidad</span>
+          <span class="text-[10px]" style="color:var(--muted)">Guardado en Supabase</span>
         </div>
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-14 rounded serif text-[8px] p-1 text-white flex flex-col justify-end shrink-0" style="background:linear-gradient(145deg,${b.c1},${b.c2})">${b.t}</div>
-          <div class="flex-1 space-y-1">
-            <div class="flex justify-between text-xs font-semibold"><span>${b.t}</span><span style="color:var(--maroon)">${p}%</span></div>
-            <div class="w-full h-2 rounded-full overflow-hidden" style="background:var(--line)">
-              <div class="h-full rounded-full" style="width:${p}%; background:var(--maroon); transition:0.3s"></div>
+
+        <div class="space-y-2.5 text-xs">
+          <div>
+            <label class="text-[10px] font-bold uppercase block mb-1" style="color:var(--muted)">Nombre visible</label>
+            <input id="prof-display-name" value="${esc(S.user.name || '')}" maxlength="60"
+              class="w-full rounded-xl px-3 py-2 text-xs outline-none border"
+              style="background:var(--surface); border-color:var(--line); color:var(--ink)">
+          </div>
+
+          <div>
+            <label class="text-[10px] font-bold uppercase block mb-1" style="color:var(--muted)">Biografía lectora</label>
+            <textarea id="prof-bio" rows="2" maxlength="280" placeholder="Cuéntanos qué te mueve a leer..."
+              class="w-full rounded-xl px-3 py-2 text-xs outline-none border resize-none"
+              style="background:var(--surface); border-color:var(--line); color:var(--ink)">${esc(S.user.bio || '')}</textarea>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-[10px] font-bold uppercase block mb-1" style="color:var(--muted)">Ciudad (opcional)</label>
+              <input id="prof-city" value="${esc(S.user.city || '')}" placeholder="Ej: Aranjuez" maxlength="60"
+                class="w-full rounded-xl px-3 py-2 text-xs outline-none border"
+                style="background:var(--surface); border-color:var(--line); color:var(--ink)">
+            </div>
+            <div>
+              <label class="text-[10px] font-bold uppercase block mb-1" style="color:var(--muted)">Visibilidad perfil</label>
+              <select id="prof-visibility" class="w-full rounded-xl px-2.5 py-2 text-xs outline-none border"
+                style="background:var(--surface); border-color:var(--line); color:var(--ink)">
+                <option value="public" ${curVis === 'public' ? 'selected' : ''}>Público</option>
+                <option value="community" ${curVis === 'community' ? 'selected' : ''}>Solo comunidad</option>
+                <option value="private" ${curVis === 'private' ? 'selected' : ''}>Privado</option>
+              </select>
             </div>
           </div>
+
+          <label class="flex items-center gap-2 pt-1 cursor-pointer">
+            <input type="checkbox" id="prof-show-city" ${S.user.show_city ? 'checked' : ''} class="accent-rose-800">
+            <span class="text-xs">Mostrar mi ciudad aproximada en mi perfil público</span>
+          </label>
+
+          <button type="button" id="btn-save-profile" onclick="saveUserProfile()" class="btn w-full py-2.5 mt-1">
+            Guardar cambios del perfil
+          </button>
         </div>
-        <button class="btn w-full mt-2" onclick="logReadingSession()" ${S.user.readToday?'disabled':''}>
-          ${S.user.readToday ? 'Lectura de hoy registrada ✓' : '+ Registrar 15 min de lectura'}
-        </button>
       </div>
+
       <div class="card p-4 space-y-2.5">
         <div class="flex justify-between items-center text-xs">
           <span class="font-bold uppercase tracking-wider" style="color:var(--maroon)">🖋️ Mi Canon Personal</span>
           <span class="text-[10px]" style="color:var(--muted)">${Object.keys(S.myRatings || {}).length} obras evaluadas</span>
         </div>
         <div class="space-y-2">
-          ${Object.entries(S.myRatings || {}).map(([bId, score]) => {
+          ${Object.keys(S.myRatings || {}).length ? Object.entries(S.myRatings).map(([bId, score]) => {
             const ratedBook = bookOf(bId);
             return `
               <div onclick="showBookDetail('${ratedBook.id}')" class="flex items-center justify-between p-2 rounded-xl border cursor-pointer hover:border-rose-800 transition" style="background:var(--card-subtle); border-color:var(--line)">
@@ -3774,13 +3825,13 @@ function renderPerfil(){
                 </div>
                 <span class="px-2 py-0.5 rounded-full text-xs font-black shrink-0" style="background:var(--maroon); color:#fff">★ ${score}/10</span>
               </div>`;
-          }).join('')}
+          }).join('') : `<p class="text-xs italic" style="color:var(--muted)">Aún no has valorado ninguna obra desde tu cuenta.</p>`}
         </div>
       </div>
 
       <div class="pt-2 pb-6 text-center space-y-3">
         <button type="button" onclick="logoutUser()" class="btn-ghost text-xs w-full py-2.5">
-          Cerrar sesión de cuenta
+          Cerrar sesión (${esc(S.user.email || '')})
         </button>
         <p class="quote text-[11px] text-stone-400 italic">
           “Dedicated to Bibi & Amelia, the real BA behind this story.”
@@ -3900,86 +3951,255 @@ go('inicio');
 
 
 // ===============================================
-// SISTEMA DE AUTENTICACIÓN (SUPABASE AUTH)
+// SISTEMA DE AUTENTICACIÓN Y PERFIL REAL (UUID)
 // ===============================================
 
-async function registerUser() {
-  const email = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-pass').value.trim();
-  
-  if (!email || !password) return toast('Por favor, rellena email y contraseña.');
-  if (password.length < 6) return toast('La contraseña debe tener al menos 6 caracteres.');
+function makeInitialAvatar(name) {
+  const letter = (String(name || 'L').trim().charAt(0) || 'L').toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" rx="40" fill="#6B1124"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#FCE5A2" font-family="Georgia,serif" font-size="34" font-weight="bold">${letter}</text></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+window.makeInitialAvatar = makeInitialAvatar;
 
-  toast('Creando cuenta...');
-  const { data, error } = await sbClient.auth.signUp({
-    email: email,
-    password: password
-  });
+function setAuthFeedback(message, type = 'error') {
+  const box = document.getElementById('auth-feedback');
+  if (!box) return;
+  if (!message) {
+    box.classList.add('hidden');
+    box.textContent = '';
+    return;
+  }
+  box.className = 'text-xs px-3.5 py-2.5 rounded-xl border leading-snug ' + (
+    type === 'success'
+      ? 'bg-emerald-950/60 border-emerald-600/50 text-emerald-200'
+      : type === 'info'
+        ? 'bg-amber-950/60 border-amber-600/50 text-amber-200'
+        : 'bg-rose-950/70 border-rose-600/60 text-rose-200'
+  );
+  box.textContent = message;
+  box.classList.remove('hidden');
+}
+
+function setGuestState() {
+  S.isGuest = true;
+  S.myRatings = {};
+  S.user = {
+    id: null,
+    isGuest: true,
+    email: '',
+    username: 'invitado',
+    name: 'Invitado',
+    bio: '',
+    city: '',
+    show_city: false,
+    is_radar_visible: false,
+    profile_visibility: 'community',
+    streak: 0,
+    page: 0,
+    reading: 1,
+    readToday: false,
+    photo: makeInitialAvatar('I')
+  };
+}
+
+function openAuthModal(reasonMsg) {
+  const authModal = document.getElementById('modal-auth');
+  if (authModal) authModal.classList.remove('hidden');
+  setAuthFeedback(reasonMsg || '', reasonMsg ? 'info' : 'error');
+}
+window.openAuthModal = openAuthModal;
+
+function enterGuestMode() {
+  setGuestState();
+  const authModal = document.getElementById('modal-auth');
+  if (authModal) authModal.classList.add('hidden');
+  updateHeader();
+  go(S.tab || 'inicio');
+  toast('Modo invitado (solo lectura). Crea cuenta para interactuar 📖');
+}
+window.enterGuestMode = enterGuestMode;
+
+function requireAuth(actionLabel = 'realizar esta acción') {
+  if (!S.isGuest && S.user && S.user.id) return true;
+  openAuthModal(`Necesitas iniciar sesión o crear una cuenta para ${actionLabel}.`);
+  return false;
+}
+window.requireAuth = requireAuth;
+
+async function loadUserProfile(authUser) {
+  const { data: profile, error } = await sbClient
+    .from('users')
+    .select('*')
+    .eq('id', authUser.id)
+    .maybeSingle();
 
   if (error) {
-    console.error('Error en registro:', error);
-    toast('Error: ' + error.message);
+    console.error('Error cargando perfil real:', error.message);
+  }
+
+  const fallbackName = (authUser.email || 'lector').split('@')[0];
+  const displayName = (profile && profile.display_name) || fallbackName;
+
+  S.isGuest = false;
+  S.myRatings = {};
+  S.user = {
+    ...(S.user || {}),
+    id: authUser.id,
+    isGuest: false,
+    email: authUser.email,
+    username: (profile && profile.username) || fallbackName,
+    name: displayName,
+    bio: (profile && profile.bio) || '',
+    city: (profile && profile.city) || '',
+    show_city: Boolean(profile && profile.show_city),
+    is_radar_visible: Boolean(profile && profile.is_radar_visible),
+    profile_visibility: (profile && profile.profile_visibility) || 'community',
+    favorite_genres: (profile && profile.favorite_genres) || [],
+    connection_intent: (profile && profile.connection_intent) || [],
+    onboarding_completed: Boolean(profile && profile.onboarding_completed),
+    streak: (S.user && S.user.streak) || 0,
+    page: (S.user && S.user.page) || 0,
+    reading: (S.user && S.user.reading) || 1,
+    photo: (profile && profile.avatar_url) || makeInitialAvatar(displayName)
+  };
+
+  console.log('Perfil real cargado desde public.users:', S.user.username, S.user.id);
+}
+
+async function saveUserProfile() {
+  if (!requireAuth('editar tu perfil')) return;
+  const btn = document.getElementById('btn-save-profile');
+  const displayName = (document.getElementById('prof-display-name')?.value || '').trim();
+  const bio = (document.getElementById('prof-bio')?.value || '').trim();
+  const city = (document.getElementById('prof-city')?.value || '').trim();
+  const visibility = document.getElementById('prof-visibility')?.value || 'community';
+  const showCity = Boolean(document.getElementById('prof-show-city')?.checked);
+
+  if (!displayName) {
+    toast('El nombre visible no puede quedar vacío.');
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  const { error } = await sbClient
+    .from('users')
+    .update({
+      display_name: displayName,
+      bio: bio,
+      city: city || null,
+      profile_visibility: visibility,
+      show_city: showCity,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', S.user.id);
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Guardar cambios del perfil'; }
+
+  if (error) {
+    console.error('Error guardando perfil:', error.message);
+    toast('No se pudieron guardar los cambios. Inténtalo de nuevo.');
+    return;
+  }
+
+  S.user.name = displayName;
+  S.user.bio = bio;
+  S.user.city = city;
+  S.user.profile_visibility = visibility;
+  S.user.show_city = showCity;
+  if (!S.user.photo || S.user.photo.startsWith('data:image/svg+xml')) {
+    S.user.photo = makeInitialAvatar(displayName);
+  }
+
+  updateHeader();
+  renderPerfil();
+  toast('Perfil y privacidad actualizados ✓');
+}
+window.saveUserProfile = saveUserProfile;
+
+async function registerUser() {
+  const email = (document.getElementById('auth-email')?.value || '').trim();
+  const password = (document.getElementById('auth-pass')?.value || '').trim();
+  setAuthFeedback('');
+
+  if (!email || !email.includes('@')) return setAuthFeedback('Introduce un correo electrónico válido.');
+  if (password.length < 6) return setAuthFeedback('La contraseña debe tener al menos 6 caracteres.');
+
+  setAuthFeedback('Creando tu cuenta...', 'info');
+  const { data, error } = await sbClient.auth.signUp({ email, password });
+
+  if (error) {
+    setAuthFeedback('No se pudo crear la cuenta: ' + error.message);
+    return;
+  }
+
+  if (data && data.session) {
+    setAuthFeedback('');
+    await checkSession();
+    toast('¡Cuenta creada con éxito! Bienvenido/a 📖');
   } else {
-    toast('¡Cuenta creada! Iniciando sesión...');
-    checkSession();
+    setAuthFeedback('Cuenta creada. Revisa tu correo para verificarla antes de entrar.', 'success');
   }
 }
 
 async function loginUser() {
-  const email = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-pass').value.trim();
-  
-  if (!email || !password) return toast('Por favor, introduce tus credenciales.');
+  const email = (document.getElementById('auth-email')?.value || '').trim();
+  const password = (document.getElementById('auth-pass')?.value || '').trim();
+  setAuthFeedback('');
 
-  toast('Iniciando sesión...');
-  const { data, error } = await sbClient.auth.signInWithPassword({
-    email: email,
-    password: password
-  });
+  if (!email || !password) return setAuthFeedback('Introduce tu correo y contraseña.');
+
+  setAuthFeedback('Verificando credenciales...', 'info');
+  const { error } = await sbClient.auth.signInWithPassword({ email, password });
 
   if (error) {
-    console.error('Error en login:', error);
-    toast('Credenciales incorrectas o usuario no existe.');
-  } else {
-    toast('¡Bienvenido de nuevo!');
-    checkSession(); 
+    setAuthFeedback('Correo o contraseña incorrectos. Revisa tus datos e inténtalo de nuevo.');
+    return;
   }
+
+  setAuthFeedback('');
+  await checkSession();
+  toast(`¡Hola de nuevo, ${S.user.name}! 📖`);
 }
+
+async function resetPasswordUser() {
+  const email = (document.getElementById('auth-email')?.value || '').trim();
+  if (!email || !email.includes('@')) {
+    return setAuthFeedback('Escribe primero tu correo electrónico arriba para enviarte el enlace de recuperación.', 'info');
+  }
+
+  await sbClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin
+  });
+  setAuthFeedback('Si existe una cuenta asociada a ese correo, recibirás un enlace de recuperación en unos instantes.', 'success');
+}
+window.resetPasswordUser = resetPasswordUser;
 
 async function logoutUser() {
   await sbClient.auth.signOut();
-  S.user = null;
-  document.getElementById('modal-auth').classList.remove('hidden');
+  setGuestState();
+  updateHeader();
+  openAuthModal('');
   toast('Has cerrado sesión correctamente.');
 }
 
 async function checkSession() {
   const { data: { session } } = await sbClient.auth.getSession();
   const authModal = document.getElementById('modal-auth');
-  
-  if (session) {
-    // Si hay sesión activa, ocultamos la pantalla de login y guardamos el usuario
+
+  if (session && session.user) {
     if (authModal) authModal.classList.add('hidden');
-    
-    // Extraemos el nombre antes de la arroba para usarlo como 'user_name'
-    const nameFromEmail = session.user.email.split('@')[0];
-    
-  S.user = { 
-    ...(S.user || {}),
-    id: session.user.id, 
-    email: session.user.email,
-    name: nameFromEmail,
-    streak: (S.user && S.user.streak) || 5
-  };
-    
-    console.log('Usuario autenticado:', S.user.name);
-    // Recargamos las valoraciones del usuario autenticado
-    fetchUserRatingsFromDB(); 
+    await loadUserProfile(session.user);
+    updateHeader();
+    if (typeof fetchUserRatingsFromDB === 'function') fetchUserRatingsFromDB();
+    go(S.tab || 'inicio');
   } else {
-    // Si no hay sesión, mostramos la pantalla de login de forma forzosa
+    setGuestState();
+    updateHeader();
     if (authModal) authModal.classList.remove('hidden');
   }
-}// =========================================================================
+}
+// =========================================================================
 // 💌 LÓGICA DE SUSURRO DIRECTO A CONVERSACIÓN
 // =========================================================================
 let currentWhisperUserKey = 'marcos';

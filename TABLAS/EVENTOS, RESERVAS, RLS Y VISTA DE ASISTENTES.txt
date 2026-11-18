@@ -1,0 +1,87 @@
+-- ============================================================================
+-- P0.4 (PARTE 1): EVENTOS, RESERVAS, RLS Y VISTA DE ASISTENTES
+-- ============================================================================
+
+ALTER TABLE public.events
+  ADD COLUMN IF NOT EXISTS organizer_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS event_type VARCHAR(40) DEFAULT 'quedada',
+  ADD COLUMN IF NOT EXISTS starts_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS price_eur NUMERIC(8,2) DEFAULT 0 CHECK (price_eur >= 0),
+  ADD COLUMN IF NOT EXISTS waitlist_enabled BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS cancellation_policy TEXT DEFAULT 'Puedes cancelar tu plaza gratuitamente hasta 2 horas antes del inicio.',
+  ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'cancelled', 'completed')),
+  ADD COLUMN IF NOT EXISTS is_demo BOOLEAN DEFAULT FALSE;
+
+UPDATE public.events
+SET
+  total_spots = GREATEST(COALESCE(total_spots, 15), 1),
+  spots_left = LEAST(GREATEST(COALESCE(spots_left, 0), 0), GREATEST(COALESCE(total_spots, 15), 1));
+
+ALTER TABLE public.events DROP CONSTRAINT IF EXISTS chk_events_spots_valid;
+ALTER TABLE public.events
+  ADD CONSTRAINT chk_events_spots_valid
+  CHECK (total_spots > 0 AND spots_left >= 0 AND spots_left <= total_spots);
+
+ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Crear eventos propios" ON public.events;
+DROP POLICY IF EXISTS "Organizador edita su evento" ON public.events;
+
+CREATE POLICY "Crear eventos propios" ON public.events
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL AND organizer_id = auth.uid());
+
+CREATE POLICY "Organizador edita su evento" ON public.events
+  FOR UPDATE USING (organizer_id = auth.uid())
+  WITH CHECK (organizer_id = auth.uid());
+
+CREATE TABLE IF NOT EXISTS public.event_reservations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id UUID NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  confirmation_code TEXT NOT NULL UNIQUE
+    DEFAULT ('BA-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8))),
+  status VARCHAR(20) NOT NULL DEFAULT 'confirmed'
+    CHECK (status IN ('confirmed', 'waitlisted', 'cancelled')),
+  show_in_attendees BOOLEAN NOT NULL DEFAULT FALSE,
+  reminder_opt_in BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  cancelled_at TIMESTAMPTZ,
+  UNIQUE (event_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_reservations_waitlist
+  ON public.event_reservations (event_id, status, created_at);
+
+ALTER TABLE public.event_reservations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Ver reservas propias o de mis eventos" ON public.event_reservations;
+DROP POLICY IF EXISTS "Actualizar preferencias propias de reserva" ON public.event_reservations;
+
+CREATE POLICY "Ver reservas propias o de mis eventos" ON public.event_reservations
+  FOR SELECT USING (
+    auth.uid() = user_id
+    OR EXISTS (
+      SELECT 1 FROM public.events e
+      WHERE e.id = event_reservations.event_id AND e.organizer_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Actualizar preferencias propias de reserva" ON public.event_reservations
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE VIEW public.public_event_attendees AS
+SELECT
+  r.event_id,
+  r.user_id,
+  u.username,
+  u.display_name,
+  u.avatar_url,
+  r.created_at AS reserved_at
+FROM public.event_reservations r
+JOIN public.users u ON u.id = r.user_id
+WHERE r.status = 'confirmed'
+  AND r.show_in_attendees = TRUE
+  AND NOT public.is_blocked(r.user_id, auth.uid());
+
+GRANT SELECT ON public.public_event_attendees TO anon, authenticated;

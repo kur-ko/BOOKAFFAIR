@@ -1,0 +1,230 @@
+-- ============================================================================
+-- P0.4 (PARTE 2): FUNCIONES ATÓMICAS DE RESERVA/CANCELACIÓN Y REALTIME
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.reserve_event_spot(
+  p_event_id UUID,
+  p_show_in_attendees BOOLEAN DEFAULT FALSE,
+  p_reminder_opt_in BOOLEAN DEFAULT FALSE
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $reserve$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_event public.events%ROWTYPE;
+  v_existing public.event_reservations%ROWTYPE;
+  v_res public.event_reservations%ROWTYPE;
+  v_new_spots INT;
+  v_waitlist_pos INT := NULL;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Debes iniciar sesión para reservar una plaza.';
+  END IF;
+
+  SELECT * INTO v_event
+  FROM public.events
+  WHERE id = p_event_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Evento no encontrado.';
+  END IF;
+
+  IF v_event.status <> 'active' THEN
+    RAISE EXCEPTION 'Este evento ya no admite reservas (estado: %).', v_event.status;
+  END IF;
+
+  SELECT * INTO v_existing
+  FROM public.event_reservations
+  WHERE event_id = p_event_id AND user_id = v_uid
+  FOR UPDATE;
+
+  IF FOUND AND v_existing.status IN ('confirmed', 'waitlisted') THEN
+    IF v_existing.status = 'waitlisted' THEN
+      SELECT COUNT(*) INTO v_waitlist_pos
+      FROM public.event_reservations
+      WHERE event_id = p_event_id
+        AND status = 'waitlisted'
+        AND created_at <= v_existing.created_at;
+    END IF;
+
+    RETURN jsonb_build_object(
+      'reservation_id', v_existing.id,
+      'confirmation_code', v_existing.confirmation_code,
+      'status', v_existing.status,
+      'spots_left', v_event.spots_left,
+      'waitlist_position', v_waitlist_pos,
+      'already_reserved', TRUE
+    );
+  END IF;
+
+  IF v_event.spots_left > 0 THEN
+    IF FOUND THEN
+      UPDATE public.event_reservations
+      SET status = 'confirmed',
+          show_in_attendees = p_show_in_attendees,
+          reminder_opt_in = p_reminder_opt_in,
+          cancelled_at = NULL,
+          updated_at = NOW()
+      WHERE id = v_existing.id
+      RETURNING * INTO v_res;
+    ELSE
+      INSERT INTO public.event_reservations (
+        event_id, user_id, status, show_in_attendees, reminder_opt_in
+      ) VALUES (
+        p_event_id, v_uid, 'confirmed', p_show_in_attendees, p_reminder_opt_in
+      )
+      RETURNING * INTO v_res;
+    END IF;
+
+    UPDATE public.events
+    SET spots_left = spots_left - 1
+    WHERE id = p_event_id
+    RETURNING spots_left INTO v_new_spots;
+
+    RETURN jsonb_build_object(
+      'reservation_id', v_res.id,
+      'confirmation_code', v_res.confirmation_code,
+      'status', 'confirmed',
+      'spots_left', v_new_spots,
+      'waitlist_position', NULL,
+      'already_reserved', FALSE
+    );
+  END IF;
+
+  IF NOT v_event.waitlist_enabled THEN
+    RAISE EXCEPTION 'El evento está completo y no dispone de lista de espera.';
+  END IF;
+
+  IF FOUND THEN
+    UPDATE public.event_reservations
+    SET status = 'waitlisted',
+        show_in_attendees = p_show_in_attendees,
+        reminder_opt_in = p_reminder_opt_in,
+        cancelled_at = NULL,
+        created_at = NOW(),
+        updated_at = NOW()
+    WHERE id = v_existing.id
+    RETURNING * INTO v_res;
+  ELSE
+    INSERT INTO public.event_reservations (
+      event_id, user_id, status, show_in_attendees, reminder_opt_in
+    ) VALUES (
+      p_event_id, v_uid, 'waitlisted', p_show_in_attendees, p_reminder_opt_in
+    )
+    RETURNING * INTO v_res;
+  END IF;
+
+  SELECT COUNT(*) INTO v_waitlist_pos
+  FROM public.event_reservations
+  WHERE event_id = p_event_id
+    AND status = 'waitlisted'
+    AND created_at <= v_res.created_at;
+
+  RETURN jsonb_build_object(
+    'reservation_id', v_res.id,
+    'confirmation_code', v_res.confirmation_code,
+    'status', 'waitlisted',
+    'spots_left', 0,
+    'waitlist_position', v_waitlist_pos,
+    'already_reserved', FALSE
+  );
+END;
+$reserve$;
+
+GRANT EXECUTE ON FUNCTION public.reserve_event_spot(UUID, BOOLEAN, BOOLEAN) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.cancel_event_reservation(p_event_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $cancel$
+DECLARE
+  v_uid UUID := auth.uid();
+  v_event public.events%ROWTYPE;
+  v_res public.event_reservations%ROWTYPE;
+  v_next_waitlist public.event_reservations%ROWTYPE;
+  v_new_spots INT;
+  v_promoted_user UUID := NULL;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'Debes iniciar sesión para cancelar tu reserva.';
+  END IF;
+
+  SELECT * INTO v_event
+  FROM public.events
+  WHERE id = p_event_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Evento no encontrado.';
+  END IF;
+
+  SELECT * INTO v_res
+  FROM public.event_reservations
+  WHERE event_id = p_event_id AND user_id = v_uid
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_res.status = 'cancelled' THEN
+    RETURN jsonb_build_object(
+      'status', 'already_cancelled',
+      'spots_left', v_event.spots_left,
+      'spot_released', FALSE
+    );
+  END IF;
+
+  UPDATE public.event_reservations
+  SET status = 'cancelled',
+      cancelled_at = NOW(),
+      updated_at = NOW()
+  WHERE id = v_res.id;
+
+  IF v_res.status = 'confirmed' THEN
+    SELECT * INTO v_next_waitlist
+    FROM public.event_reservations
+    WHERE event_id = p_event_id AND status = 'waitlisted'
+    ORDER BY created_at ASC
+    LIMIT 1
+    FOR UPDATE;
+
+    IF FOUND THEN
+      UPDATE public.event_reservations
+      SET status = 'confirmed', updated_at = NOW()
+      WHERE id = v_next_waitlist.id;
+
+      v_promoted_user := v_next_waitlist.user_id;
+      v_new_spots := v_event.spots_left;
+    ELSE
+      UPDATE public.events
+      SET spots_left = LEAST(total_spots, spots_left + 1)
+      WHERE id = p_event_id
+      RETURNING spots_left INTO v_new_spots;
+    END IF;
+  ELSE
+    v_new_spots := v_event.spots_left;
+  END IF;
+
+  RETURN jsonb_build_object(
+    'status', 'cancelled',
+    'spots_left', v_new_spots,
+    'spot_released', (v_res.status = 'confirmed'),
+    'waitlist_promoted', (v_promoted_user IS NOT NULL)
+  );
+END;
+$cancel$;
+
+GRANT EXECUTE ON FUNCTION public.cancel_event_reservation(UUID) TO authenticated;
+
+DO $rt$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'events'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.events;
+  END IF;
+END $rt$;

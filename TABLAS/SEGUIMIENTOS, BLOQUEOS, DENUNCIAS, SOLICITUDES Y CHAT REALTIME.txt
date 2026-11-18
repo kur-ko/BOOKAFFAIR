@@ -1,0 +1,415 @@
+-- ============================================================================
+-- HITO P0.3: SEGUIMIENTOS, BLOQUEOS, DENUNCIAS, SOLICITUDES Y CHAT REALTIME
+-- ============================================================================
+
+-- 1. BLOQUEOS (Prevalece sobre cualquier permiso social o de mensajería)
+CREATE TABLE IF NOT EXISTS public.user_blocks (
+  blocker_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  blocked_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (blocker_id, blocked_id),
+  CHECK (blocker_id <> blocked_id)
+);
+
+ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Gestionar bloqueos propios" ON public.user_blocks;
+CREATE POLICY "Gestionar bloqueos propios" ON public.user_blocks
+  FOR ALL USING (auth.uid() = blocker_id) WITH CHECK (auth.uid() = blocker_id);
+
+-- Función auxiliar segura para comprobar bloqueo bidireccional
+CREATE OR REPLACE FUNCTION public.is_blocked(user_a UUID, user_b UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF user_a IS NULL OR user_b IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM public.user_blocks
+    WHERE (blocker_id = user_a AND blocked_id = user_b)
+       OR (blocker_id = user_b AND blocked_id = user_a)
+  );
+END;
+$$;
+
+-- 2. SEGUIMIENTOS UNILATERALES (No habilitan chat)
+CREATE TABLE IF NOT EXISTS public.user_follows (
+  follower_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  following_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (follower_id, following_id),
+  CHECK (follower_id <> following_id)
+);
+
+ALTER TABLE public.user_follows ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Leer seguimientos" ON public.user_follows;
+DROP POLICY IF EXISTS "Seguir a lectores no bloqueados" ON public.user_follows;
+DROP POLICY IF EXISTS "Dejar de seguir" ON public.user_follows;
+
+CREATE POLICY "Leer seguimientos" ON public.user_follows
+  FOR SELECT USING (
+    auth.uid() IS NOT NULL
+    AND NOT public.is_blocked(follower_id, auth.uid())
+    AND NOT public.is_blocked(following_id, auth.uid())
+  );
+
+CREATE POLICY "Seguir a lectores no bloqueados" ON public.user_follows
+  FOR INSERT WITH CHECK (
+    auth.uid() = follower_id
+    AND NOT public.is_blocked(follower_id, following_id)
+  );
+
+CREATE POLICY "Dejar de seguir" ON public.user_follows
+  FOR DELETE USING (auth.uid() = follower_id);
+
+-- 3. MODERACIÓN Y DENUNCIAS
+CREATE TABLE IF NOT EXISTS public.content_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  target_type VARCHAR(30) NOT NULL
+    CHECK (target_type IN ('user', 'note', 'comment', 'event', 'message', 'quote_copyright')),
+  target_id TEXT NOT NULL,
+  reason VARCHAR(60) NOT NULL,
+  details TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open', 'reviewing', 'resolved', 'dismissed')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.content_reports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Ver denuncias propias" ON public.content_reports;
+DROP POLICY IF EXISTS "Crear denuncia propia" ON public.content_reports;
+
+CREATE POLICY "Ver denuncias propias" ON public.content_reports
+  FOR SELECT USING (auth.uid() = reporter_id);
+
+CREATE POLICY "Crear denuncia propia" ON public.content_reports
+  FOR INSERT WITH CHECK (auth.uid() = reporter_id);
+
+-- 4. SOLICITUDES DE CONEXIÓN, R+J Y SUSURROS CONTEXTUALIZADOS
+CREATE TABLE IF NOT EXISTS public.connection_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sender_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  receiver_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  request_type VARCHAR(20) NOT NULL DEFAULT 'connect'
+    CHECK (request_type IN ('connect', 'whisper', 'rj_match')),
+  context_book_id INT REFERENCES public.books(id) ON DELETE SET NULL,
+  context_note_id UUID REFERENCES public.notes(id) ON DELETE SET NULL,
+  context_quote TEXT,
+  intro_message TEXT CHECK (intro_message IS NULL OR char_length(intro_message) <= 500),
+  status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'accepted', 'rejected', 'cancelled', 'blocked')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  responded_at TIMESTAMPTZ,
+  CHECK (sender_id <> receiver_id)
+);
+
+-- Evitar duplicar solicitudes pendientes entre el mismo par de personas
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_connection_request
+  ON public.connection_requests (LEAST(sender_id, receiver_id), GREATEST(sender_id, receiver_id))
+  WHERE status = 'pending';
+
+ALTER TABLE public.connection_requests ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Ver solicitudes propias" ON public.connection_requests;
+DROP POLICY IF EXISTS "Enviar solicitud permitida" ON public.connection_requests;
+DROP POLICY IF EXISTS "Cancelar solicitud propia" ON public.connection_requests;
+
+CREATE POLICY "Ver solicitudes propias" ON public.connection_requests
+  FOR SELECT USING (
+    (auth.uid() = sender_id OR auth.uid() = receiver_id)
+    AND NOT public.is_blocked(sender_id, receiver_id)
+  );
+
+CREATE POLICY "Enviar solicitud permitida" ON public.connection_requests
+  FOR INSERT WITH CHECK (
+    auth.uid() = sender_id
+    AND status = 'pending'
+    AND NOT public.is_blocked(sender_id, receiver_id)
+  );
+
+CREATE POLICY "Cancelar solicitud propia" ON public.connection_requests
+  FOR UPDATE USING (auth.uid() = sender_id AND status = 'pending')
+  WITH CHECK (auth.uid() = sender_id AND status = 'cancelled');
+
+-- Trigger al bloquear: limpiar seguimientos y cerrar solicitudes pendientes
+CREATE OR REPLACE FUNCTION public.cleanup_on_user_block()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  DELETE FROM public.user_follows
+  WHERE (follower_id = NEW.blocker_id AND following_id = NEW.blocked_id)
+     OR (follower_id = NEW.blocked_id AND following_id = NEW.blocker_id);
+
+  UPDATE public.connection_requests
+  SET status = 'blocked', responded_at = NOW()
+  WHERE status = 'pending'
+    AND (
+      (sender_id = NEW.blocker_id AND receiver_id = NEW.blocked_id)
+      OR (sender_id = NEW.blocked_id AND receiver_id = NEW.blocker_id)
+    );
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_cleanup_on_block ON public.user_blocks;
+CREATE TRIGGER trg_cleanup_on_block
+  AFTER INSERT ON public.user_blocks
+  FOR EACH ROW EXECUTE FUNCTION public.cleanup_on_user_block();
+
+-- 5. CONVERSACIONES Y MENSAJES DIRECTOS (Solo tras aceptación mutua)
+CREATE TABLE IF NOT EXISTS public.conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_a UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_b UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  context_label TEXT,
+  origin_request_id UUID REFERENCES public.connection_requests(id) ON DELETE SET NULL,
+  last_message_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (user_a < user_b),
+  UNIQUE (user_a, user_b)
+);
+
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Ver conversaciones propias no bloqueadas" ON public.conversations;
+CREATE POLICY "Ver conversaciones propias no bloqueadas" ON public.conversations
+  FOR SELECT USING (
+    (auth.uid() = user_a OR auth.uid() = user_b)
+    AND NOT public.is_blocked(user_a, user_b)
+  );
+-- Nota: sin política INSERT directa; solo se crea conversación al aceptar solicitud vía RPC.
+
+CREATE TABLE IF NOT EXISTS public.direct_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
+  sender_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL CHECK (char_length(trim(body)) > 0 AND char_length(body) <= 2000),
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_direct_messages_conv_time
+  ON public.direct_messages (conversation_id, created_at DESC);
+
+ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Leer mensajes de mis conversaciones" ON public.direct_messages;
+DROP POLICY IF EXISTS "Enviar mensajes en mis conversaciones" ON public.direct_messages;
+
+CREATE POLICY "Leer mensajes de mis conversaciones" ON public.direct_messages
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.conversations c
+      WHERE c.id = direct_messages.conversation_id
+        AND (c.user_a = auth.uid() OR c.user_b = auth.uid())
+        AND NOT public.is_blocked(c.user_a, c.user_b)
+    )
+  );
+
+CREATE POLICY "Enviar mensajes en mis conversaciones" ON public.direct_messages
+  FOR INSERT WITH CHECK (
+    auth.uid() = sender_id
+    AND EXISTS (
+      SELECT 1 FROM public.conversations c
+      WHERE c.id = direct_messages.conversation_id
+        AND (c.user_a = auth.uid() OR c.user_b = auth.uid())
+        AND NOT public.is_blocked(c.user_a, c.user_b)
+    )
+  );
+
+-- Actualizar timestamp de última actividad en la conversación
+CREATE OR REPLACE FUNCTION public.touch_conversation_last_message()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  UPDATE public.conversations
+  SET last_message_at = NEW.created_at
+  WHERE id = NEW.conversation_id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_touch_conversation ON public.direct_messages;
+CREATE TRIGGER trg_touch_conversation
+  AFTER INSERT ON public.direct_messages
+  FOR EACH ROW EXECUTE FUNCTION public.touch_conversation_last_message();
+
+-- 6. RPC ATÓMICO: Aceptar o rechazar solicitud de conexión / susurro
+CREATE OR REPLACE FUNCTION public.respond_connection_request(
+  p_request_id UUID,
+  p_action TEXT
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_req public.connection_requests%ROWTYPE;
+  v_user_a UUID;
+  v_user_b UUID;
+  v_conv_id UUID;
+  v_context TEXT;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Debes iniciar sesión para responder solicitudes.';
+  END IF;
+
+  IF p_action NOT IN ('accept', 'reject') THEN
+    RAISE EXCEPTION 'Acción no válida. Usa accept o reject.';
+  END IF;
+
+  SELECT * INTO v_req
+  FROM public.connection_requests
+  WHERE id = p_request_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Solicitud no encontrada.';
+  END IF;
+
+  IF v_req.receiver_id <> auth.uid() THEN
+    RAISE EXCEPTION 'No tienes permiso para responder esta solicitud.';
+  END IF;
+
+  IF v_req.status <> 'pending' THEN
+    RAISE EXCEPTION 'Esta solicitud ya fue procesada.';
+  END IF;
+
+  IF public.is_blocked(v_req.sender_id, v_req.receiver_id) THEN
+    RAISE EXCEPTION 'No es posible conectar debido a un bloqueo activo.';
+  END IF;
+
+  IF p_action = 'reject' THEN
+    UPDATE public.connection_requests
+    SET status = 'rejected', responded_at = NOW()
+    WHERE id = p_request_id;
+    RETURN NULL;
+  END IF;
+
+  -- Aceptación mutua: marcar aceptada y abrir conversación
+  UPDATE public.connection_requests
+  SET status = 'accepted', responded_at = NOW()
+  WHERE id = p_request_id;
+
+  v_user_a := LEAST(v_req.sender_id, v_req.receiver_id);
+  v_user_b := GREATEST(v_req.sender_id, v_req.receiver_id);
+
+  IF v_req.context_book_id IS NOT NULL THEN
+    SELECT 'Conectados por «' || title || '»' INTO v_context
+    FROM public.books WHERE id = v_req.context_book_id;
+  ELSIF v_req.request_type = 'whisper' THEN
+    v_context := 'Conectados por un susurro literario';
+  ELSIF v_req.request_type = 'rj_match' THEN
+    v_context := 'Complicidad literaria (R+J)';
+  ELSE
+    v_context := 'Conexión en comunidad';
+  END IF;
+
+  INSERT INTO public.conversations (user_a, user_b, context_label, origin_request_id)
+  VALUES (v_user_a, v_user_b, v_context, v_req.id)
+  ON CONFLICT (user_a, user_b) DO UPDATE
+    SET last_message_at = NOW()
+  RETURNING id INTO v_conv_id;
+
+  -- Si la solicitud incluía mensaje o susurro, insertarlo como primer mensaje real
+  IF NULLIF(trim(COALESCE(v_req.intro_message, '')), '') IS NOT NULL THEN
+    INSERT INTO public.direct_messages (conversation_id, sender_id, body)
+    VALUES (v_conv_id, v_req.sender_id, trim(v_req.intro_message));
+  END IF;
+
+  RETURN v_conv_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.respond_connection_request(UUID, TEXT) TO authenticated;
+
+-- 7. RPC SEGURO: Marcar conversación como leída (solo mensajes recibidos)
+CREATE OR REPLACE FUNCTION public.mark_conversation_read(p_conversation_id UUID)
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_updated INT;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN 0;
+  END IF;
+
+  UPDATE public.direct_messages dm
+  SET read_at = NOW()
+  FROM public.conversations c
+  WHERE dm.conversation_id = c.id
+    AND c.id = p_conversation_id
+    AND (c.user_a = auth.uid() OR c.user_b = auth.uid())
+    AND dm.sender_id <> auth.uid()
+    AND dm.read_at IS NULL
+    AND NOT public.is_blocked(c.user_a, c.user_b);
+
+  GET DIAGNOSTICS v_updated = ROW_COUNT;
+  RETURN v_updated;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.mark_conversation_read(UUID) TO authenticated;
+
+-- 8. ACTUALIZAR REGLAS DE PERFILES Y NOTAS PARA RESPETAR BLOQUEOS Y SEGUIDORES
+CREATE OR REPLACE VIEW public.public_profiles AS
+SELECT
+  u.id,
+  u.username,
+  u.display_name,
+  u.avatar_url,
+  u.bio,
+  CASE WHEN u.show_city THEN u.city ELSE NULL END AS visible_city,
+  u.favorite_genres,
+  u.connection_intent,
+  u.archetype_rj,
+  u.profile_visibility,
+  u.created_at
+FROM public.users u
+WHERE
+  (
+    u.profile_visibility = 'public'
+    OR (u.profile_visibility = 'community' AND auth.uid() IS NOT NULL)
+    OR u.id = auth.uid()
+  )
+  AND NOT public.is_blocked(u.id, auth.uid());
+
+DROP POLICY IF EXISTS "Leer notas permitidas" ON public.notes;
+CREATE POLICY "Leer notas permitidas" ON public.notes
+  FOR SELECT USING (
+    NOT public.is_blocked(author_id, auth.uid())
+    AND (
+      audience = 'public'
+      OR author_id = auth.uid()
+      OR (
+        audience = 'followers'
+        AND EXISTS (
+          SELECT 1 FROM public.user_follows f
+          WHERE f.follower_id = auth.uid() AND f.following_id = notes.author_id
+        )
+      )
+    )
+  );
+
+-- 9. HABILITAR SUPABASE REALTIME EN MENSAJES Y SOLICITUDES
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'direct_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'connection_requests'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.connection_requests;
+  END IF;
+END $$;
