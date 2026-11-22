@@ -940,6 +940,42 @@ async function fetchEventsFromDB() {
 
       if (typeof S !== 'undefined') {
         S.featuredEvent = ev;
+        if (!S.eventsBooked) S.eventsBooked = {};
+
+        if (!S.isGuest && S.user && S.user.id && typeof sbClient !== 'undefined') {
+          const { data: myRes } = await sbClient
+            .from('event_reservations')
+            .select('status')
+            .eq('event_id', ev.id)
+            .eq('user_id', S.user.id)
+            .maybeSingle();
+
+          S.eventsBooked[ev.id] = Boolean(myRes && myRes.status === 'confirmed');
+        }
+      }
+
+      if (typeof FEED_ITEMS !== 'undefined') {
+        const mappedEvent = {
+          type: 'event',
+          postId: ev.id,
+          id: ev.id,
+          badge: ev.badge_text || 'Quedada Oficial Book Affair',
+          title: ev.title,
+          date: ev.scheduled_at || ev.subtitle || 'Próxima quedada',
+          venue: ev.venue_name || ev.address || 'Sede Book Affair',
+          desc: ev.description || '',
+          spotsLeft: typeof ev.spots_left === 'number' ? ev.spots_left : 0,
+          img: ev.image_url || 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=700&q=80',
+          organizer: 'Equipo Book Affair',
+          starts_at: ev.starts_at
+        };
+
+       const idx = FEED_ITEMS.findIndex(x => x.type === 'event');
+     if (idx !== -1) {
+       FEED_ITEMS[idx] = mappedEvent;
+     } else {
+       FEED_ITEMS.unshift(mappedEvent);
+     }
       }
 
       if (typeof renderInicio === 'function') {
@@ -1117,43 +1153,6 @@ async function fetchFeedFromDB() {
 // ==========================================
 // 🎟️ RESERVAR PLAZA EN EVENTO (SUPABASE)
 // ==========================================
-async function reservarPlazaEvento() {
-  if (!S.featuredEvent) return;
-  
-  if (S.featuredEvent.spots_left <= 0) {
-    alert('¡Aforo completo! No quedan plazas disponibles.');
-    return;
-  }
-
-  const nuevoAforo = S.featuredEvent.spots_left - 1;
-
-  try {
-    const { error } = await sbClient
-      .from('events')
-      .update({ spots_left: nuevoAforo })
-      .eq('id', S.featuredEvent.id);
-
-    if (error) {
-      console.error('Error al reservar plaza:', error.message);
-      return;
-    }
-
-    // Actualizamos localmente el estado
-    S.featuredEvent.spots_left = nuevoAforo;
-    
-    // Actualizamos el texto visual de plazas en la pantalla
-    const allSpans = document.querySelectorAll('span, div, p');
-    allSpans.forEach(el => {
-      if (el.textContent && el.textContent.includes('Quedan') && el.textContent.includes('plazas')) {
-        el.textContent = `Quedan ${nuevoAforo} plazas`;
-      }
-    });
-
-    alert('¡Plaza reservada con éxito! Te esperamos este sábado.');
-  } catch (err) {
-    console.error('Error de red al reservar:', err);
-  }
-}
 
 // Cargar automáticamente los datos al iniciar la página
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1193,6 +1192,11 @@ const I = {
 };
 const ic = (n, cls='w-5 h-5', fill=false) => `<svg class="${cls}" viewBox="0 0 24 24" fill="${fill?'currentColor':'none'}" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${I[n]||''}</svg>`;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const safeUrl = (u, fb = '') => {
+  const s = String(u || '').trim();
+  return /^https:\/\/[^\s"'<>]+$/i.test(s) ? s : fb;
+};
+window.safeUrl = safeUrl;
 const now = () => new Date().toTimeString().slice(0,5);
 
 const USERS_DATA = {
@@ -1464,7 +1468,7 @@ function updateHeader() {
 
   const hdrAvatar = document.getElementById('hdr-avatar');
   if (hdrAvatar && S.user) {
-    hdrAvatar.src = S.user.photo || makeInitialAvatar(S.user.name);
+    hdrAvatar.src = safeUrl(S.user.photo, makeInitialAvatar(S.user.name));
     hdrAvatar.alt = S.user.name || 'Perfil';
   }
 }
@@ -1795,7 +1799,7 @@ function renderInicio(){
       <div class="px-4 py-3 flex gap-3.5 overflow-x-auto hide-sb border-b" style="border-color:var(--line)">
         <button class="flex flex-col items-center gap-1 shrink-0" onclick="go('perfil')">
           <div class="w-13 h-13 rounded-full p-[2px] relative" style="background:linear-gradient(135deg,var(--maroon),var(--gold))">
-            <img src="${S.user.photo}" alt="Kur-ko" class="w-12 h-12 rounded-full object-cover" />
+            <img src="${esc(safeUrl(S.user.photo, makeInitialAvatar(S.user.name || 'Tú')))}" alt="${esc(S.user.name || 'Kur-ko')}" class="w-12 h-12 rounded-full object-cover" />
             <span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-stone-900 rounded-full"></span>
           </div>
           <span class="text-[11px] font-medium">Tú</span>
@@ -1803,7 +1807,7 @@ function renderInicio(){
         ${Object.entries(THREADS).filter(([id]) => id !== 'kurko').map(([id, t]) => `
           <button class="flex flex-col items-center gap-1 shrink-0" onclick="openWhisper('${id}', 1, 142)">
             <div class="w-13 h-13 rounded-full p-[2px]" style="background:linear-gradient(135deg,#A11B35,#D4A03D)">
-              <img src="${t.photo}" alt="${t.name}" class="w-12 h-12 rounded-full object-cover" />
+              <img src="${esc(safeUrl(t.photo, makeInitialAvatar(t.name || 'Lector')))}" alt="${esc(t.name || 'Lector')}" class="w-12 h-12 rounded-full object-cover" />
             </div>
             <span class="text-[11px]" style="color:var(--muted)">${t.af}% afín</span>
           </button>
@@ -1825,33 +1829,32 @@ function renderInicio(){
             <div class="event-ticket-card p-4 space-y-3">
               <div class="flex items-start justify-between gap-3">
                 <div class="space-y-1">
-                  <span class="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300 tracking-wider">📅 ${item.date}</span>
-                  <h3 class="serif font-bold text-lg leading-tight text-stone-950 dark:text-stone-100">${item.title}</h3>
+                  <span class="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300 tracking-wider">📅 ${esc(item.date)}</span>
+                  <h3 class="serif font-bold text-lg leading-tight text-stone-950 dark:text-stone-100">${esc(item.title)}</h3>
                   <p class="text-xs text-amber-900/80 dark:text-amber-200/80 font-medium flex items-center gap-1">
-                    📍 ${item.venue}
+                    📍 ${esc(item.venue)}
                   </p>
                 </div>
-                <img src="${item.img}" class="w-20 h-20 rounded-xl object-cover shrink-0 shadow-md border border-amber-300/40" />
+               <img src="${esc(safeUrl(item.img, (typeof SAMPLE_PHOTOS !== 'undefined' && SAMPLE_PHOTOS[0]) || ''))}" alt="${esc(item.title || 'Evento')}" class="w-20 h-20 rounded-xl object-cover shrink-0 shadow-md border border-amber-300/40" />
               </div>
 
               <p class="text-xs leading-relaxed text-stone-700 dark:text-stone-300">
-                ${item.desc}
+                ${esc(item.desc)}
               </p>
 
               <div class="border-t border-dashed border-amber-300 dark:border-stone-700 pt-3 flex items-center justify-between">
                 <div>
                   <span class="text-[10px] uppercase font-bold text-stone-500 block">Aforo disponible</span>
-                  <span class="text-xs font-black text-amber-800 dark:text-amber-300">Quedan ${item.spotsLeft} plazas</span>
+                 <span class="text-xs font-black text-amber-800 dark:text-amber-300">
+                ${Number(item.spotsLeft) > 0 ? `Quedan ${esc(item.spotsLeft)} plazas` : 'Sin plazas libres (lista de espera)'}
+                </span>
                 </div>
-                <div class="flex items-center gap-2">
-                  <button class="btn-ghost text-xs px-3 py-1.5" onclick="S.mapPin='cafe1';go('mapa')">Ver en Waze 🗺️</button>
-                  <button class="${isBooked?'btn-ghost text-xs':'btn text-xs'}" onclick="bookEvent('${item.id}')">
-                    ${isBooked ? 'Apuntado ✓ (Cancelar)' : 'Reservar plaza gratis'}
-                  </button>
+               <button class="${isBooked?'btn-ghost text-xs':'btn text-xs'}" onclick="bookEvent('${esc(String(item.id))}')">
+                ${isBooked ? 'Apuntado ✓ (Cancelar)' : (Number(item.spotsLeft) > 0 ? 'Reservar plaza gratis' : 'Lista de espera')}
+              </button>
                 </div>
               </div>
-            </div>
-          </article>`;
+            </article>`;
       } else if(item.type === 'quote'){
         const b = bookOf(item.book);
         const t = THREADS[item.id] || USERS_DATA[item.id] || { name: item.author || 'Lector', photo: S.user.photo, af: 95 };
@@ -1862,7 +1865,7 @@ function renderInicio(){
           <article class="p-4 border-b space-y-2.5" style="border-color:var(--line)">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2.5">
-                <img src="${t.photo}" class="w-9 h-9 rounded-full object-cover border-2 border-stone-800 shadow-sm" />
+                <img src="${esc(safeUrl(t.photo, makeInitialAvatar(t.name || item.author || 'Lector')))}" alt="${esc(t.name || 'Lector')}" class="w-9 h-9 rounded-full object-cover border-2 border-stone-800 shadow-sm" />
                 <div>
                   <div class="flex items-center gap-1.5">
                     <span class="text-xs font-bold">${esc(t.name)}</span>
@@ -1949,14 +1952,14 @@ function renderInicio(){
                     <span class="text-xs font-bold">${esc(t.name)}</span>
                     <span class="text-[10px] px-1.5 py-0.2 rounded font-bold" style="background:var(--maroon-soft);color:var(--maroon)">${t.af || 94}% complicidad</span>
                   </div>
-                  <p class="text-[10px]" style="color:var(--muted)">📸 Momento lector · ${item.place} · ${item.time}</p>
+                  <p class="text-[10px]" style="color:var(--muted)">📸 Momento lector · ${esc(item.place)} · ${esc(item.time)}</p>
                 </div>
               </div>
               <button class="chip text-[10px]" onclick="showBookDetail(${b.id})">📖 Ver obra</button>
             </div>
 
             <div class="rounded-2xl overflow-hidden border shadow-sm" style="border-color:var(--line)">
-              <img src="${item.img}" class="w-full h-64 object-cover" />
+              <img src="${esc(safeUrl(item.img, (typeof SAMPLE_PHOTOS !== 'undefined' && SAMPLE_PHOTOS[1]) || ''))}" alt="${esc(item.caption || 'Momento lector')}" class="w-full h-64 object-cover" />
               <div class="p-3.5 space-y-1" style="background:var(--card)">
                 <p class="text-xs font-medium leading-relaxed" style="color:var(--ink)">"${esc(item.caption)}"</p>
                 ${item.noteReflection ? `<p class="text-[11px] text-stone-500 italic">💭 "${esc(item.noteReflection)}"</p>` : ''}
@@ -1997,7 +2000,7 @@ function renderInicio(){
                   <h3 class="serif font-bold text-lg leading-snug">${esc(item.title)}</h3>
                   <p class="text-xs font-medium text-amber-800 dark:text-amber-400">Por ${esc(item.author || 'Redacción Book Affair')}</p>
                 </div>
-                ${item.img ? `<img src="${item.img}" class="w-20 h-20 rounded-xl object-cover shrink-0 border" style="border-color:var(--line)"/>` : ''}
+                ${item.img ? `<img src="${esc(safeUrl(item.img, (typeof SAMPLE_PHOTOS !== 'undefined' && SAMPLE_PHOTOS[1]) || ''))}" alt="${esc(item.title || 'Artículo')}" class="w-20 h-20 rounded-xl object-cover shrink-0 border" style="border-color:var(--line)"/>` : ''}
               </div>
 
               <p class="text-xs leading-relaxed" style="color:var(--ink)">
@@ -2102,38 +2105,169 @@ function initSmartScrollHeader() {
   }, { passive: true });
 }
 
+function formatICSUtcDate(dateInput) {
+  const d = dateInput ? new Date(dateInput) : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+  if (Number.isNaN(d.getTime())) {
+    return new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  }
+  return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+}
+
+function escapeICSText(str) {
+  return String(str || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\n/g, '\\n')
+    .replace(/,/g, '\\,')
+    .replace(/;/g, '\\;');
+}
+
+function downloadEventICS(evData = {}) {
+  const startIso = evData.starts_at || evData.start_at || null;
+  const startObj = startIso && !Number.isNaN(new Date(startIso).getTime())
+    ? new Date(startIso)
+    : new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+  const endObj = new Date(startObj.getTime() + 90 * 60 * 1000);
+
+  const dtStamp = formatICSUtcDate(new Date());
+  const dtStart = formatICSUtcDate(startObj);
+  const dtEnd = formatICSUtcDate(endObj);
+  const title = escapeICSText(evData.title || 'Quedada Literaria · BookAffair');
+  const location = escapeICSText(evData.venue_name || evData.venue || 'Espacio cultural · BookAffair');
+  const codeText = evData.confirmation_code ? `Código: ${evData.confirmation_code}. ` : '';
+  const description = escapeICSText(`${codeText}${evData.description || evData.desc || 'Encuentro de lectura de BookAffair.'}`);
+  const uid = `${evData.id || 'event'}-${Date.now()}@bookaffair.app`;
+
+  const icsContent = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//BookAffair//Quedadas//ES',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART:${dtStart}`,
+    `DTEND:${dtEnd}`,
+    `SUMMARY:${title}`,
+    `LOCATION:${location}`,
+    `DESCRIPTION:${description}`,
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+
+  const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'bookaffair-quedada.ics';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+window.downloadEventICS = downloadEventICS;
+
 async function bookEvent(id) {
-  const isCurrentlyBooked = !!S.eventsBooked[id];
-  const willBook = !isCurrentlyBooked;
+  if (typeof requireAuth === 'function' && !requireAuth('reservar o cancelar plaza en una quedada')) return;
 
-  // 1. Actualizamos inmediatamente el estado visual (UI optimista)
-  S.eventsBooked[id] = willBook;
-  toast(willBook ? '¡Plaza reservada para la quedada! Te hemos enviado el ticket 🎟️' : 'Has cancelado tu reserva.');
-  renderInicio();
+  const evIdStr = String(id || '');
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(evIdStr);
+  const currentEvent = (S.featuredEvent && String(S.featuredEvent.id) === evIdStr)
+    ? S.featuredEvent
+    : (typeof FEED_ITEMS !== 'undefined' ? FEED_ITEMS.find(x => String(x.id) === evIdStr || String(x.postId) === evIdStr) : null);
 
-  // 2. Sincronizamos las plazas en Supabase si tenemos el evento activo cargado
-  if (S.featuredEvent) {
-    const cambio = willBook ? -1 : 1;
-    const nuevoAforo = Math.max(0, (S.featuredEvent.spots_left ?? 4) + cambio);
+  if (!isUuid || !window.sbClient) {
+    const willBookLocal = !S.eventsBooked[evIdStr];
+    S.eventsBooked[evIdStr] = willBookLocal;
+    if (willBookLocal) {
+      downloadEventICS(currentEvent || { id: evIdStr });
+      toast('Plaza reservada · Calendario (.ics) descargado 🎟️');
+    } else {
+      toast('Reserva cancelada.');
+    }
+    if (typeof renderInicio === 'function') renderInicio();
+    return;
+  }
 
-    try {
-      const { error } = await sbClient
-        .from('events')
-        .update({ spots_left: nuevoAforo })
-        .eq('id', S.featuredEvent.id);
+  const isCurrentlyBooked = !!S.eventsBooked[evIdStr];
+
+  try {
+    if (!isCurrentlyBooked) {
+      const { data, error } = await sbClient.rpc('reserve_event_spot', {
+        p_event_id: evIdStr,
+        p_show_in_attendees: false,
+        p_reminder_opt_in: false
+      });
 
       if (error) {
-        console.error('Error al actualizar plazas en Supabase:', error.message);
-      } else {
-        S.featuredEvent.spots_left = nuevoAforo;
-        console.log('Plazas actualizadas en Supabase:', nuevoAforo);
-        renderInicio();
+        console.error('Error en reserve_event_spot:', error.message);
+        toast(error.message || 'No se pudo completar la reserva.');
+        return;
       }
-    } catch (err) {
-      console.error('Error de red al actualizar reserva:', err);
+
+      const rawRes = Array.isArray(data) ? data[0] : data;
+      const res = rawRes || {};
+      const isWaitlisted = res.status === 'waitlisted';
+      S.eventsBooked[evIdStr] = !isWaitlisted;
+
+      if (typeof res.spots_left === 'number') {
+        if (S.featuredEvent && String(S.featuredEvent.id) === evIdStr) {
+          S.featuredEvent.spots_left = res.spots_left;
+        }
+        if (typeof FEED_ITEMS !== 'undefined') {
+          const evItem = FEED_ITEMS.find(x => String(x.id) === evIdStr || String(x.postId) === evIdStr);
+          if (evItem) evItem.spotsLeft = res.spots_left;
+        }
+      }
+
+      if (isWaitlisted) {
+        const pos = res.waitlist_position ? ` (turno #${res.waitlist_position})` : '';
+        toast(`Aforo completo: estás en lista de espera${pos} ⏳`);
+      } else {
+        downloadEventICS({
+          ...(S.featuredEvent || currentEvent || {}),
+          id: evIdStr,
+          confirmation_code: res.confirmation_code
+        });
+        const codeMsg = res.confirmation_code ? ` · Ref: ${res.confirmation_code}` : '';
+        toast(`¡Plaza confirmada${codeMsg}! Evento .ics listo 🎟️`);
+      }
+    } else {
+      const { data, error } = await sbClient.rpc('cancel_event_reservation', {
+        p_event_id: evIdStr
+      });
+
+      if (error) {
+        console.error('Error en cancel_event_reservation:', error.message);
+        toast(error.message || 'No se pudo cancelar la reserva.');
+        return;
+      }
+
+      const rawRes = Array.isArray(data) ? data[0] : data;
+      const res = rawRes || {};
+      S.eventsBooked[evIdStr] = false;
+
+      if (typeof res.spots_left === 'number') {
+        if (S.featuredEvent && String(S.featuredEvent.id) === evIdStr) {
+          S.featuredEvent.spots_left = res.spots_left;
+        }
+        if (typeof FEED_ITEMS !== 'undefined') {
+          const evItem = FEED_ITEMS.find(x => String(x.id) === evIdStr || String(x.postId) === evIdStr);
+          if (evItem) evItem.spotsLeft = res.spots_left;
+        }
+      }
+
+      toast(res.waitlist_promoted ? 'Reserva cancelada y plaza asignada a la lista de espera.' : 'Reserva cancelada y plaza liberada.');
     }
+
+    if (typeof fetchEventsFromDB === 'function') await fetchEventsFromDB();
+    if (typeof renderInicio === 'function') renderInicio();
+  } catch (err) {
+    console.error('Fallo de red al gestionar reserva:', err);
+    toast('Error de conexión al procesar la reserva.');
   }
 }
+window.bookEvent = bookEvent;
 
 async function likePost(postId) {
   if (!requireAuth('dar me gusta a una publicación')) return;
@@ -3482,7 +3616,7 @@ function renderMensajes() {
             <div class="p-3 rounded-xl border space-y-2" style="background:var(--card-subtle); border-color:var(--line)">
               <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2 min-w-0">
-                  <img src="${sPhoto}" class="w-9 h-9 rounded-full object-cover shrink-0"/>
+                  <img src="${esc(safeUrl(sPhoto, makeInitialAvatar(sName)))}" alt="${esc(sName)}" class="w-9 h-9 rounded-full object-cover shrink-0"/>
                   <div class="min-w-0">
                     <span class="text-xs font-bold block truncate">${esc(sName)}</span>
                     <span class="text-[10px]" style="color:var(--muted)">${req.request_type === 'whisper' ? 'Susurro literario' : 'Solicitud de conexión'}</span>
@@ -3554,7 +3688,7 @@ function renderMensajes() {
     <div class="sticky top-0 z-10 flex items-center justify-between px-3 py-2.5 border-b" style="background:var(--surface); border-color:var(--line)">
       <div class="flex items-center gap-2 min-w-0">
         <button type="button" class="icon-btn" onclick="S.activeConversationId=null;fetchRequestsAndChatsFromDB();renderMensajes()">${ic('back','w-4 h-4')}</button>
-        <img src="${other.photo}" class="w-8 h-8 rounded-full object-cover border shrink-0" style="border-color:var(--maroon)" />
+        <img src="${esc(safeUrl(other.photo, makeInitialAvatar(other.name)))}" alt="${esc(other.name)}" class="w-11 h-11 rounded-full object-cover shrink-0 border" style="border-color:var(--line)" />
         <div class="min-w-0">
           <h3 class="text-xs font-bold truncate">${esc(other.name)}</h3>
           <p class="text-[10px] truncate" style="color:var(--maroon)">${esc(conv.context_label || 'Conversación literaria')}</p>
@@ -4032,7 +4166,7 @@ function renderPerfil(){
               stroke-dasharray="${C}" stroke-dashoffset="${C*(1-p/100)}"/>
           </svg>
           <div class="absolute inset-1.5 rounded-full overflow-hidden shadow-md border-2 border-amber-600">
-            <img src="${S.user.photo}" alt="${esc(S.user.name)}" class="w-full h-full object-cover" />
+            <img src="${esc(safeUrl(S.user.photo, makeInitialAvatar(S.user.name || 'Lector')))}" alt="${esc(S.user.name || 'Perfil')}" class="w-full h-full object-cover" />
           </div>
         </div>
         <div class="min-w-0 flex-1">
@@ -4674,28 +4808,16 @@ function renderPublicComments(postId) {
   }
 
   container.innerHTML = list.map(c => `
-    <div class="p-2.5 rounded-xl bg-stone-100 dark:bg-stone-850 border border-stone-200 dark:border-stone-750 flex items-start gap-2">
-      <div class="w-6 h-6 rounded-full bg-rose-950 text-rose-200 border border-rose-800 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
-        ${(c.author || 'L').charAt(0).toUpperCase()}
-      </div>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center justify-between">
-          <span class="font-bold text-[11px] text-stone-900 dark:text-stone-200">${c.author}</span>
-          <span class="text-[9px] text-stone-400">${c.time}</span>
+    <div class="w-6 h-6 rounded-full bg-rose-950 text-rose-200 border border-rose-800 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+          ${esc(String(c.author || 'L').charAt(0).toUpperCase())}
         </div>
-        <p class="text-xs text-stone-700 dark:text-stone-300 mt-0.5 leading-relaxed">${c.text}</p>
-        
-        <!-- Botón sutil para apostillar/replicar -->
-        <div class="flex justify-end pt-1">
-          <button type="button" 
-            onclick="replyToComment('${postId}', '${c.author.replace(/'/g, "\\'")}')" 
-            class="text-[10px] font-semibold text-rose-800 hover:text-rose-600 dark:text-rose-400 flex items-center gap-1 transition">
-            <span>Apostillar</span>
-            <span>↩</span>
-          </button>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-[11px] text-stone-900 dark:text-stone-200">${esc(c.author || 'Lector')}</span>
+            <span class="text-[9px] text-stone-400">${esc(c.time || '')}</span>
+          </div>
+          <p class="text-xs text-stone-700 dark:text-stone-300 mt-0.5 leading-relaxed">${esc(c.text || '')}</p>
         </div>
-      </div>
-    </div>
   `).join('');
 }
 
