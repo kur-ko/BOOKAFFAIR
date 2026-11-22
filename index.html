@@ -790,35 +790,83 @@ window.sbClient = sbClient;
 // ==========================================
 async function fetchUserRatingsFromDB() {
   try {
-    let activeUser = 'kurko';
-    if (typeof S !== 'undefined' && S.user) {
-      activeUser = (S.user.id || S.user.name || S.user.email || 'kurko').toLowerCase();
-    }
+    if (S.isGuest || !S.user || !S.user.id) return;
 
     const { data, error } = await sbClient
-      .from('book_ratings')
-      .select('book_id, rating')
-      .eq('user_id', activeUser);
+      .from('user_books')
+      .select('book_id, rating, status, current_page')
+      .eq('user_id', S.user.id);
 
     if (error) {
-      console.error('Error al cargar valoraciones de usuario:', error.message);
+      console.error('Error al cargar biblioteca de usuario:', error.message);
       return;
     }
 
-    if (data && data.length > 0) {
-      if (!S.myRatings) S.myRatings = {};
-      data.forEach(row => {
-        const bId = parseInt(row.book_id, 10);
+    if (!S.myRatings) S.myRatings = {};
+    if (!S.userLibrary) S.userLibrary = {};
+
+    (data || []).forEach(row => {
+      const bId = parseInt(row.book_id, 10);
+      S.userLibrary[bId] = row;
+      if (row.rating != null) {
         S.myRatings[bId] = row.rating;
         S.myRatings[String(bId)] = row.rating;
-      });
-      console.log('Valoraciones del usuario cargadas desde Supabase:', S.myRatings);
-      if (typeof renderBiblioteca === 'function') renderBiblioteca();
+      }
+    });
+
+    if (typeof renderBiblioteca === 'function' && S.tab === 'biblioteca') {
+      renderBiblioteca();
     }
   } catch (err) {
-    console.error('Fallo de red al consultar ratings:', err);
+    console.error('Fallo de red al consultar user_books:', err);
   }
 }
+window.fetchUserRatingsFromDB = fetchUserRatingsFromDB;
+
+async function rateBook(bookId, score) {
+  try {
+    if (!requireAuth('valorar libros en tu biblioteca')) return;
+
+    const numericBookId = parseInt(bookId, 10);
+    const numericScore = parseInt(score, 10);
+
+    if (!S.myRatings) S.myRatings = {};
+    S.myRatings[numericBookId] = numericScore;
+    S.myRatings[String(numericBookId)] = numericScore;
+
+    if (typeof toast === 'function') toast(`Has calificado con ${numericScore}/10 en tu biblioteca.`);
+
+    if (typeof showBookDetail === 'function') showBookDetail(numericBookId);
+    if (typeof renderBiblioteca === 'function') renderBiblioteca();
+
+    const existingStatus = S.userLibrary?.[numericBookId]?.status || 'read';
+    const { error } = await sbClient
+      .from('user_books')
+      .upsert(
+        {
+          user_id: S.user.id,
+          book_id: numericBookId,
+          status: existingStatus,
+          rating: numericScore,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'user_id,book_id' }
+      );
+
+    if (error) {
+      console.error('Error al guardar valoración en user_books:', error.message);
+      toast('No se pudo guardar tu valoración en el servidor.');
+      return;
+    }
+
+    // Refrescar catálogo para recoger la media recalculada en servidor
+    if (typeof fetchBooksFromDB === 'function') await fetchBooksFromDB();
+  } catch (err) {
+    console.error('Excepción en rateBook:', err);
+  }
+}
+window.rateBook = rateBook;
+
 window.fetchUserRatingsFromDB = fetchUserRatingsFromDB;
 async function fetchBooksFromDB() {
   try {
@@ -923,83 +971,144 @@ async function fetchFeedFromDB() {
       return [];
     }
 
-    console.log('Notas del feed cargadas desde Supabase:', data);
+    const noteIds = (data || []).map(n => n.id);
 
-    const realNotes = data.map(n => {
-      const uName = (n.user_name || '').toLowerCase();
-      let userId = 'kurko';
-      if (uName.includes('marcos')) userId = 'marcos';
-      else if (uName.includes('laura')) userId = 'laura';
+    // Cargar comentarios reales de estas notas
+    if (noteIds.length > 0) {
+      const { data: commentsData } = await sbClient
+        .from('note_comments')
+        .select('id, note_id, author_id, body, created_at')
+        .in('note_id', noteIds)
+        .order('created_at', { ascending: true });
 
-      // Buscar el libro correspondiente en el catálogo BOOKS por título
-      let foundBook = null;
-      if (typeof BOOKS !== 'undefined' && Array.isArray(BOOKS)) {
-        foundBook = BOOKS.find(b => 
-          b.t && n.book_title && b.t.toLowerCase().trim() === n.book_title.toLowerCase().trim()
-        );
-        if (!foundBook && n.book_title) {
-          foundBook = BOOKS.find(b => 
-            b.t && b.t.toLowerCase().includes(n.book_title.toLowerCase())
-          );
-        }
+      const authorIds = [...new Set([
+        ...(data || []).map(n => n.author_id).filter(Boolean),
+        ...(commentsData || []).map(c => c.author_id).filter(Boolean)
+      ])];
+
+      let profileMap = {};
+      if (authorIds.length > 0) {
+        const { data: profiles } = await sbClient
+          .from('public_profiles')
+          .select('id, display_name, username, avatar_url, visible_city')
+          .in('id', authorIds);
+        (profiles || []).forEach(p => { profileMap[p.id] = p; });
       }
 
-      // Si no lo encuentra, usamos el id del libro encontrado o el que corresponda
-      const finalBookId = foundBook ? foundBook.id : 3;
-
-      return {
-        type: 'quote',
-        id: userId,
-        postId: n.id,
-        user: userId,
-        author: n.user_name,
-        book: finalBookId,
-        q: n.book_quote,
-        noteReflection: n.user_comment || 'Reflexión compartida en comunidad',
-        page: '42',
-        place: n.location_name || 'Madrid · Lectura activa',
-        likes: Number(n.likes_count) || 0,
-        match: Number(n.match_percent) || 100,
-        rating: Number(n.rating) || 9.5,
-        time: 'Justo ahora'
-      };
-    });
-
-    if (typeof FEED_ITEMS !== 'undefined' && realNotes.length > 0) {
-      const existingEvents = FEED_ITEMS.filter(item => item.type === 'event');
-      const articles = (typeof EDITORIAL_ARTICLES !== 'undefined' && Array.isArray(EDITORIAL_ARTICLES))
-  ? EDITORIAL_ARTICLES
-  : [];
-      FEED_ITEMS.length = 0;
-
-      let evIdx = 0, artIdx = 0;
-      realNotes.forEach((note, index) => {
-        FEED_ITEMS.push(note);
-        // Cada 2 notas intercalamos 1 Evento y 1 Artículo (Fórmula 3-1-1)
-        if ((index + 1) % 2 === 0) {
-          if (existingEvents[evIdx]) {
-            FEED_ITEMS.push(existingEvents[evIdx]);
-            evIdx = (evIdx + 1) % existingEvents.length;
-          }
-          if (articles[artIdx]) {
-            FEED_ITEMS.push(articles[artIdx]);
-            artIdx = (artIdx + 1) % articles.length;
-          }
-        }
+      window.PUBLIC_COMMENTS = {};
+      (commentsData || []).forEach(c => {
+        const prof = profileMap[c.author_id];
+        const authorLabel = (S.user && c.author_id === S.user.id)
+          ? (S.user.name || 'Tú')
+          : (prof?.display_name || prof?.username || 'Lector');
+        if (!window.PUBLIC_COMMENTS[c.note_id]) window.PUBLIC_COMMENTS[c.note_id] = [];
+        window.PUBLIC_COMMENTS[c.note_id].push({
+          id: c.id,
+          author: authorLabel,
+          text: c.body,
+          time: new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
       });
 
-      // Si hay pocas notas, garantizamos al menos 1 evento y 1 artículo visibles
-      if (realNotes.length < 2) {
-        if (existingEvents[0]) FEED_ITEMS.push(existingEvents[0]);
-        if (articles[0]) FEED_ITEMS.push(articles[0]);
+      // Marcar qué notas ya tienen like del usuario actual
+      if (!S.isGuest && S.user && S.user.id) {
+        const { data: myLikes } = await sbClient
+          .from('note_likes')
+          .select('note_id')
+          .eq('user_id', S.user.id)
+          .in('note_id', noteIds);
+
+        S.liked = {};
+        (myLikes || []).forEach(l => { S.liked[l.note_id] = true; });
       }
+
+      // Mapear notas a FEED_ITEMS
+      const realNotes = (data || []).map(n => {
+        const prof = n.author_id ? profileMap[n.author_id] : null;
+        const isMe = Boolean(S.user && S.user.id && n.author_id === S.user.id);
+        const authorName = isMe
+          ? (S.user.name || n.user_name || 'Tú')
+          : (prof?.display_name || n.user_name || 'Lector');
+        const authorPhoto = isMe
+          ? (S.user.photo || makeInitialAvatar(authorName))
+          : (prof?.avatar_url || n.user_avatar || makeInitialAvatar(authorName));
+
+        let foundBook = null;
+        if (n.book_id && Array.isArray(BOOKS)) {
+          foundBook = BOOKS.find(b => Number(b.id) === Number(n.book_id));
+        }
+        if (!foundBook && n.book_title && Array.isArray(BOOKS)) {
+          foundBook = BOOKS.find(b => b.t && b.t.toLowerCase().includes(n.book_title.toLowerCase()));
+        }
+
+        const keyId = 'uid_' + (n.author_id || n.id);
+        THREADS[keyId] = {
+          name: authorName,
+          photo: authorPhoto,
+          af: Number(n.match_percent) || 90,
+          city: prof?.visible_city || n.location_name || 'Comunidad',
+          hook: foundBook ? foundBook.t : (n.book_title || 'Lectura compartida'),
+          msgs: THREADS[keyId]?.msgs || []
+        };
+
+        S.likes[n.id] = Number(n.likes_count) || 0;
+
+        return {
+          type: 'quote',
+          id: keyId,
+          authorId: n.author_id,
+          isDemo: Boolean(n.is_demo),
+          postId: n.id,
+          user: keyId,
+          author: authorName,
+          authorPhoto,
+          book: foundBook ? foundBook.id : (n.book_id || 1),
+          q: n.book_quote,
+          noteReflection: n.user_comment || 'Reflexión compartida en comunidad',
+          page: n.page_number || '',
+          place: n.location_name || 'Comunidad lectora',
+          likes: Number(n.likes_count) || 0,
+          match: Number(n.match_percent) || 90,
+          rating: Number(n.rating) || 9.0,
+          time: n.is_demo ? 'Demostración' : 'Publicación real'
+        };
+      });
+
+      if (typeof FEED_ITEMS !== 'undefined' && realNotes.length > 0) {
+        const existingEvents = FEED_ITEMS.filter(item => item.type === 'event');
+        const articles = (typeof EDITORIAL_ARTICLES !== 'undefined' && Array.isArray(EDITORIAL_ARTICLES))
+        ? EDITORIAL_ARTICLES
+        : [];
+        FEED_ITEMS.length = 0;
+
+        let evIdx = 0, artIdx = 0;
+        realNotes.forEach((note, index) => {
+          FEED_ITEMS.push(note);
+          if ((index + 1) % 2 === 0) {
+            if (existingEvents[evIdx]) {
+              FEED_ITEMS.push(existingEvents[evIdx]);
+              evIdx = (evIdx + 1) % existingEvents.length;
+            }
+            if (articles[artIdx]) {
+              FEED_ITEMS.push(articles[artIdx]);
+              artIdx = (artIdx + 1) % articles.length;
+            }
+          }
+        });
+
+        if (realNotes.length < 2) {
+          if (existingEvents[0]) FEED_ITEMS.push(existingEvents[0]);
+          if (articles[0]) FEED_ITEMS.push(articles[0]);
+        }
+      }
+
+      if (typeof renderInicio === 'function' && S.tab === 'inicio') {
+        renderInicio();
+      }
+      return realNotes;
     }
 
-    if (typeof renderInicio === 'function') {
-      renderInicio();
-    }
-
-    return realNotes;
+    return [];
   } catch (err) {
     console.error('Fallo al cargar feed:', err);
     return [];
@@ -1263,6 +1372,14 @@ const S = {
   filter: 'all', q: '',
   votesDuel: { papel:814, digital:320 }, myVoteDuel: null,
   activeChat: null,
+  activeConversationId: null,
+  realProfiles: {},
+  incomingRequests: [],
+  outgoingRequests: [],
+  realConversations: [],
+  realMessagesByConv: {},
+  unreadTotal: 0,
+  realtimeChannel: null,
   mapFilter: 'all',
   mapPin: 'cafe1',
   eventsBooked: { 'ev-1': false, 'ev-2': false },
@@ -2018,41 +2135,58 @@ async function bookEvent(id) {
   }
 }
 
-async function likePost(postId){
-    // 1. Alternar estado (dar like o quitar like)
-    S.liked[postId] = !S.liked[postId];
+async function likePost(postId) {
+  if (!requireAuth('dar me gusta a una publicación')) return;
 
-    // 2. Determinar contador actual del post
-    const currentPost = (typeof FEED_ITEMS !== 'undefined') 
-        ? FEED_ITEMS.find(i => i.postId === postId) 
-        : null;
-    const baseLikes = S.likes[postId] !== undefined 
-        ? S.likes[postId] 
-        : (currentPost ? (currentPost.likes || 0) : 0);
+  const idStr = String(postId || '');
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idStr);
 
-    const newLikes = Math.max(0, baseLikes + (S.liked[postId] ? 1 : -1));
-    S.likes[postId] = newLikes;
-    if (currentPost) currentPost.likes = newLikes;
+  const willLike = !S.liked[idStr];
+  const currentPost = (typeof FEED_ITEMS !== 'undefined')
+    ? FEED_ITEMS.find(i => String(i.postId) === idStr || String(i.id) === idStr)
+    : null;
 
-    // 3. Actualización optimista inmediata en pantalla
-    renderInicio();
+  const baseLikes = S.likes[idStr] !== undefined
+    ? Number(S.likes[idStr])
+    : Number(currentPost?.likes || 0);
 
-    // 4. Persistencia en la tabla 'notes' de Supabase
-    try {
-        const { error } = await sbClient
-            .from('notes')
-            .update({ likes_count: newLikes })
-            .eq('id', postId);
+  const newLikes = Math.max(0, baseLikes + (willLike ? 1 : -1));
 
-        if (error) {
-            console.error('Error al actualizar like en Supabase:', error.message);
-        } else {
-            console.log(`Like persistido en Supabase para ${postId}:`, newLikes);
-        }
-    } catch (err) {
-        console.error('Fallo de conexión al dar like:', err);
+  // 1. Actualización quirúrgica del corazón sin redibujar el muro ni cerrar hilos
+  S.liked[idStr] = willLike;
+  S.likes[idStr] = newLikes;
+  if (currentPost) currentPost.likes = newLikes;
+
+  const likeBtn = document.querySelector(`button[onclick*="likePost('${idStr}')"]`);
+  if (likeBtn) {
+    likeBtn.innerHTML = `${ic('heart', 'w-4 h-4', !!willLike)} <span>${newLikes}</span>`;
+    likeBtn.style.color = willLike ? 'var(--maroon)' : 'var(--muted)';
+  }
+
+  if (!isUuid || !window.sbClient || !S.user?.id) return;
+
+  // 2. Persistir en public.note_likes (el trigger recalcula likes_count en Supabase)
+  try {
+    if (willLike) {
+      const { error } = await sbClient
+        .from('note_likes')
+        .insert([{ user_id: S.user.id, note_id: idStr }]);
+      if (error && error.code !== '23505') throw error;
+    } else {
+      const { error } = await sbClient
+        .from('note_likes')
+        .delete()
+        .eq('user_id', S.user.id)
+        .eq('note_id', idStr);
+      if (error) throw error;
     }
+  } catch (err) {
+    console.error('Error al sincronizar like en note_likes:', err.message || err);
+    toast('No se pudo guardar el me gusta en el servidor.');
+  }
 }
+window.likePost = likePost;
+
 
 function likeReel(id){
   S.liked[id] = !S.liked[id];
@@ -2307,42 +2441,47 @@ window.confirmarVeredicto = confirmarVeredicto;
 // ==========================================
 // ⭐ VOTACIÓN PERSISTENTE EN SUPABASE
 // ==========================================
-async function rateBook(bookId, score) {
-  try {
-    const numericBookId = parseInt(bookId, 10);
-    const numericScore = parseInt(score, 10);
-    
-    let activeUser = 'kurko';
-    if (typeof S !== 'undefined' && S.user) {
-      activeUser = (S.user.id || S.user.name || S.user.email || 'kurko').toLowerCase();
+async function postPublicComment(postId) {
+  if (!requireAuth('anotar al margen de una publicación')) return;
+  const targetId = String(postId || 'default');
+  const input = document.getElementById(`thread-input-${targetId}`);
+  const txt = input ? input.value.trim() : '';
+  if (!txt) return;
+
+  const myName = S.user.name || 'Lector';
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId);
+
+  if (isUuid) {
+    const { data, error } = await sbClient
+      .from('note_comments')
+      .insert([{ note_id: targetId, author_id: S.user.id, body: txt }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error guardando anotación en note_comments:', error.message);
+      toast('No se pudo guardar la anotación.');
+      return;
     }
 
-    console.log(`-> Votando libro ID ${numericBookId} con nota ${numericScore} (Usuario: ${activeUser})`);
-
-    // Actualización optimista local
-    if (!S.myRatings) S.myRatings = {};
-    S.myRatings[numericBookId] = numericScore;
-    S.myRatings[String(numericBookId)] = numericScore;
-
-    if (typeof toast === 'function') toast(`Has calificado con ${numericScore}/10.`);
-
-    // Refrescar modal y tarjeta
-    showBookDetail(numericBookId);
-    if (typeof renderBiblioteca === 'function') renderBiblioteca();
-
-    // Guardar en Supabase
-    if (typeof sbClient !== 'undefined') {
-      const { data, error } = await sbClient
-        .from('book_ratings')
-        .upsert(
-          { user_id: activeUser, book_id: numericBookId, rating: numericScore },
-          { onConflict: 'user_id,book_id' }
-        );
-      if (error) console.error('Error Supabase rating:', error.message);
-    }
-  } catch (err) {
-    console.error('Error en rateBook:', err);
+    if (!window.PUBLIC_COMMENTS[targetId]) window.PUBLIC_COMMENTS[targetId] = [];
+    window.PUBLIC_COMMENTS[targetId].push({
+      id: data?.id || crypto.randomUUID(),
+      author: myName,
+      text: txt,
+      time: 'Ahora'
+    });
+  } else {
+    if (!window.PUBLIC_COMMENTS[targetId]) window.PUBLIC_COMMENTS[targetId] = [];
+    window.PUBLIC_COMMENTS[targetId].push({ author: myName, text: txt, time: 'Ahora' });
   }
+
+  input.value = '';
+  renderPublicComments(targetId);
+
+  const countBadge = document.getElementById(`count-comments-${targetId}`);
+  if (countBadge) countBadge.textContent = window.PUBLIC_COMMENTS[targetId].length;
+  if (typeof toast === 'function') toast('Anotación compartida en el muro 🖋️');
 }
 window.rateBook = rateBook;
 window.showBookDetail = showBookDetail;
@@ -3297,127 +3436,267 @@ function startMatchChat(){
   openChat(matchedId);
 }
 
-function renderMensajes(){
+function getOtherUserProfile(conv) {
+  const otherId = conv.user_a === S.user.id ? conv.user_b : conv.user_a;
+  const prof = S.realProfiles[otherId];
+  return {
+    id: otherId,
+    name: prof?.display_name || prof?.username || 'Lector',
+    photo: prof?.avatar_url || makeInitialAvatar(prof?.display_name || prof?.username || 'L'),
+    city: prof?.visible_city || ''
+  };
+}
+
+function renderMensajes() {
   const el = document.getElementById('v-mensajes');
-  if(!S.activeChat){
+  if (!el) return;
+
+  if (S.isGuest || !S.user || !S.user.id) {
     el.innerHTML = `
-      <div class="p-4 border-b flex items-center justify-between" style="border-color:var(--line)">
-        <div>
-          <h2 class="serif text-xl font-bold">Conversaciones literarias</h2>
-          <p class="text-xs" style="color:var(--muted)">Complicidad a través de citas, dilemas e ideas</p>
-        </div>
-        <button class="chip text-xs" onclick="go('inicio')">← Volver</button>
-      </div>
-
-      <div class="m-4 p-3.5 rounded-2xl bg-gradient-to-r from-rose-900 to-amber-700 text-white flex items-center justify-between shadow-md">
-        <div class="flex items-center gap-2.5">
-          <span class="text-xl">💌</span>
-          <div>
-            <span class="text-[10px] font-black uppercase text-amber-200">Nueva complicidad</span>
-            <p class="text-xs font-bold leading-tight">Sofía Bécquer te ha enviado un mensaje</p>
-          </div>
-        </div>
-        <button class="btn bg-white text-stone-900 text-xs px-3 py-1 shadow" onclick="openChat('sofia')">Abrir</button>
-      </div>
-
-      <div class="px-4 pb-4 space-y-2">
-        ${Object.entries(THREADS).filter(([id]) => id !== 'kurko').map(([id, t]) => {
-          const last = t.msgs[t.msgs.length - 1];
-          return `
-          <button onclick="openChat('${id}')" class="w-full card p-3 flex items-center gap-3 text-left hover:border-rose-900 transition">
-            <img src="${t.photo}" class="w-11 h-11 rounded-full object-cover shrink-0 border" style="border-color:var(--line)" />
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold truncate">${esc(t.name)}</span>
-                <span class="text-[10px] font-bold" style="color:var(--maroon)">${t.af}% afín</span>
-              </div>
-              <p class="text-[11px] truncate mt-0.5" style="color:var(--muted)">${last ? esc(last.t) : '¡Empieza una conversación literaria!'}</p>
-            </div>
-          </button>`;
-        }).join('')}
+      <div class="p-6 text-center space-y-4">
+        <div class="w-16 h-16 mx-auto rounded-full flex items-center justify-center text-3xl" style="background:var(--maroon-soft)">💌</div>
+        <h2 class="serif text-xl font-bold">Mensajes y solicitudes</h2>
+        <p class="text-xs leading-relaxed" style="color:var(--muted)">
+          Inicia sesión para recibir solicitudes de conexión, aceptar susurros y chatear en tiempo real con otros lectores.
+        </p>
+        <button type="button" onclick="openAuthModal('Inicia sesión para ver tus solicitudes y mensajes.')" class="btn w-full py-3">
+          Iniciar sesión
+        </button>
       </div>`;
     return;
   }
 
-  const t = THREADS[S.activeChat];
+  if (!S.activeConversationId) {
+    const incomingHtml = S.incomingRequests.length ? `
+      <div class="m-4 p-3.5 rounded-2xl card space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-black uppercase tracking-wider" style="color:var(--maroon)">
+            📩 Solicitudes recibidas (${S.incomingRequests.length})
+          </span>
+        </div>
+        ${S.incomingRequests.map(req => {
+          const sender = S.realProfiles[req.sender_id] || { display_name: 'Lector', avatar_url: makeInitialAvatar('L') };
+          const sName = sender.display_name || sender.username || 'Lector';
+          const sPhoto = sender.avatar_url || makeInitialAvatar(sName);
+          return `
+            <div class="p-3 rounded-xl border space-y-2" style="background:var(--card-subtle); border-color:var(--line)">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <img src="${sPhoto}" class="w-9 h-9 rounded-full object-cover shrink-0"/>
+                  <div class="min-w-0">
+                    <span class="text-xs font-bold block truncate">${esc(sName)}</span>
+                    <span class="text-[10px]" style="color:var(--muted)">${req.request_type === 'whisper' ? 'Susurro literario' : 'Solicitud de conexión'}</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button type="button" onclick="respondRequestAction('${req.id}', 'accept')" class="btn text-[11px] px-3 py-1">Aceptar</button>
+                  <button type="button" onclick="respondRequestAction('${req.id}', 'reject')" class="btn-ghost text-[11px] px-2.5 py-1">Rechazar</button>
+                </div>
+              </div>
+              ${req.context_quote ? `<p class="quote text-[11px] px-2 border-l-2" style="border-color:var(--gold); color:var(--muted)">${esc(req.context_quote)}</p>` : ''}
+              ${req.intro_message ? `<p class="text-xs leading-snug">${esc(req.intro_message)}</p>` : ''}
+            </div>`;
+        }).join('')}
+      </div>` : '';
+
+    const convsHtml = S.realConversations.length ? S.realConversations.map(conv => {
+      const other = getOtherUserProfile(conv);
+      const msgs = S.realMessagesByConv[conv.id] || [];
+      const last = msgs[msgs.length - 1];
+      const unreadInConv = msgs.filter(m => m.sender_id !== S.user.id && !m.read_at).length;
+
+      return `
+        <button type="button" onclick="openRealConversation('${conv.id}')" class="w-full card p-3 flex items-center gap-3 text-left hover:border-rose-900 transition">
+          <img src="${other.photo}" class="w-11 h-11 rounded-full object-cover shrink-0 border" style="border-color:var(--line)" />
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-xs font-bold truncate">${esc(other.name)}</span>
+              ${unreadInConv > 0
+                ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-700 text-white">${unreadInConv} nuevo${unreadInConv > 1 ? 's' : ''}</span>`
+                : `<span class="text-[10px]" style="color:var(--muted)">${other.city ? esc(other.city) : 'Comunidad'}</span>`}
+            </div>
+            <p class="text-[11px] truncate mt-0.5" style="color:var(--muted)">${last ? esc(last.body) : esc(conv.context_label || 'Conversación abierta')}</p>
+          </div>
+        </button>`;
+    }).join('') : `
+      <div class="card p-6 text-center space-y-2">
+        <span class="text-2xl block">📖</span>
+        <p class="text-xs font-bold">Aún no tienes conversaciones activas</p>
+        <p class="text-[11px]" style="color:var(--muted)">Envía un susurro desde cualquier nota del muro o acepta una solicitud recibida.</p>
+      </div>`;
+
+    el.innerHTML = `
+      <div class="p-4 border-b flex items-center justify-between" style="border-color:var(--line)">
+        <div>
+          <h2 class="serif text-xl font-bold">Conversaciones literarias</h2>
+          <p class="text-xs" style="color:var(--muted)">Solicitudes consentidas y chat en tiempo real</p>
+        </div>
+        <button type="button" class="chip text-xs" onclick="go('inicio')">← Volver</button>
+      </div>
+      ${incomingHtml}
+      <div class="px-4 pb-6 space-y-2 pt-2">
+        ${convsHtml}
+      </div>`;
+    return;
+  }
+
+  const conv = S.realConversations.find(c => c.id === S.activeConversationId);
+  if (!conv) {
+    S.activeConversationId = null;
+    renderMensajes();
+    return;
+  }
+
+  const other = getOtherUserProfile(conv);
+  const msgs = S.realMessagesByConv[conv.id] || [];
+
   el.innerHTML = `
     <div class="sticky top-0 z-10 flex items-center justify-between px-3 py-2.5 border-b" style="background:var(--surface); border-color:var(--line)">
-      <div class="flex items-center gap-2">
-        <button class="icon-btn" onclick="S.activeChat=null;renderMensajes()">${ic('back','w-4 h-4')}</button>
-        <img src="${t.photo}" class="w-8 h-8 rounded-full object-cover border" style="border-color:var(--maroon)" />
-        <div>
-          <h3 class="text-xs font-bold">${esc(t.name)}</h3>
-          <p class="text-[10px]" style="color:var(--maroon)">${t.af}% complicidad lectora</p>
+      <div class="flex items-center gap-2 min-w-0">
+        <button type="button" class="icon-btn" onclick="S.activeConversationId=null;fetchRequestsAndChatsFromDB();renderMensajes()">${ic('back','w-4 h-4')}</button>
+        <img src="${other.photo}" class="w-8 h-8 rounded-full object-cover border shrink-0" style="border-color:var(--maroon)" />
+        <div class="min-w-0">
+          <h3 class="text-xs font-bold truncate">${esc(other.name)}</h3>
+          <p class="text-[10px] truncate" style="color:var(--maroon)">${esc(conv.context_label || 'Conversación literaria')}</p>
         </div>
       </div>
-      <button class="btn-ghost text-[11px]" onclick="toast('Conversación guardada en tu cuaderno')">Opciones</button>
-    </div>
-
-    <div class="p-2 text-center">
-      <span class="chip text-[10px]" style="background:var(--maroon-soft);color:var(--maroon);border-color:transparent">
-        ${ic('spark','w-3 h-3')} Conectados por: ${esc(t.hook)}
-      </span>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button type="button" class="btn-ghost text-[10px] px-2.5 py-1" onclick="reportUserAction('${other.id}', '${esc(other.name)}')">Denunciar</button>
+        <button type="button" class="btn-ghost text-[10px] px-2.5 py-1 text-rose-700" onclick="blockUserAction('${other.id}', '${esc(other.name)}')">Bloquear</button>
+      </div>
     </div>
 
     <div id="thread-box" class="p-4 space-y-2.5 overflow-y-auto max-h-[520px]">
-      ${t.msgs.length ? t.msgs.map(m => `
-        <div class="flex ${m.me?'justify-end':'justify-start'}">
-          <div class="max-w-[80%] px-3.5 py-2 text-xs ${m.me?'bubble-me':'bubble-them'}">
-            ${esc(m.t)}
-            <div class="text-[9px] mt-1 text-right opacity-70">${m.time}</div>
-          </div>
-        </div>
-      `).join('') : `
+      ${msgs.length ? msgs.map(m => {
+        const isMe = m.sender_id === S.user.id;
+        const tStr = m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        return `
+          <div class="flex ${isMe ? 'justify-end' : 'justify-start'}">
+            <div class="max-w-[80%] px-3.5 py-2 text-xs ${isMe ? 'bubble-me' : 'bubble-them'}">
+              ${esc(m.body)}
+              <div class="text-[9px] mt-1 text-right opacity-70">${tStr}</div>
+            </div>
+          </div>`;
+      }).join('') : `
         <div class="text-center py-8 text-xs" style="color:var(--muted)">
           <span class="text-2xl block mb-2">💌</span>
-          Rómpase el hielo citando un pasaje inolvidable.
+          Conversación abierta. Escribe el primer mensaje sobre vuestra lectura.
         </div>
       `}
     </div>
 
     <div class="sticky bottom-0 p-3 border-t flex gap-2" style="background:var(--surface); border-color:var(--line)">
-      <input id="chat-input" placeholder="Escribe un mensaje o comenta un pasaje..." onkeydown="if(event.key==='Enter')sendChatMsg()"
+      <input id="chat-input" placeholder="Escribe un mensaje..." onkeydown="if(event.key==='Enter')sendChatMsg()"
         class="flex-1 rounded-full px-4 py-2 text-xs outline-none" style="background:var(--card);border:1px solid var(--line);color:var(--ink)">
-      <button class="btn px-3 py-2" onclick="sendChatMsg()">${ic('send','w-4 h-4')}</button>
+      <button type="button" class="btn px-3 py-2" onclick="sendChatMsg()">${ic('send','w-4 h-4')}</button>
     </div>`;
 
   setTimeout(() => {
     const box = document.getElementById('thread-box');
-    if(box) box.scrollTop = box.scrollHeight;
+    if (box) box.scrollTop = box.scrollHeight;
   }, 50);
 }
+
+async function openRealConversation(convId) {
+  if (!requireAuth('abrir una conversación')) return;
+  S.activeConversationId = convId;
+  await sbClient.rpc('mark_conversation_read', { p_conversation_id: convId });
+  await fetchRequestsAndChatsFromDB();
+  go('mensajes');
+}
+window.openRealConversation = openRealConversation;
+
+
+
+async function blockUserAction(targetUserId, targetName) {
+  if (!requireAuth('bloquear a un usuario')) return;
+  if (!confirm(`¿Bloquear a ${targetName}? Se ocultarán sus contenidos y se cerrará la conversación.`)) return;
+
+  const { error } = await sbClient
+    .from('user_blocks')
+    .insert([{ blocker_id: S.user.id, blocked_id: targetUserId, reason: 'Bloqueo desde conversación' }]);
+
+  if (error && error.code !== '23505') {
+    toast('No se pudo completar el bloqueo.');
+    return;
+  }
+
+  S.activeConversationId = null;
+  await fetchRequestsAndChatsFromDB();
+  await fetchFeedFromDB();
+  renderMensajes();
+  toast(`${targetName} bloqueado.`);
+}
+window.blockUserAction = blockUserAction;
+
+async function reportUserAction(targetUserId, targetName) {
+  if (!requireAuth('enviar una denuncia')) return;
+  const reason = prompt(`Motivo para reportar a ${targetName} (ej: spam, acoso, contenido inapropiado):`);
+  if (!reason || !reason.trim()) return;
+
+  const { error } = await sbClient
+    .from('content_reports')
+    .insert([{
+      reporter_id: S.user.id,
+      target_type: 'user',
+      target_id: String(targetUserId),
+      reason: reason.trim().slice(0, 60)
+    }]);
+
+  if (error) {
+    toast('No se pudo registrar el reporte.');
+    return;
+  }
+  toast('Reporte enviado a moderación. Gracias por cuidar la comunidad.');
+}
+window.reportUserAction = reportUserAction;
 
 function openChat(id){
   S.activeChat = id;
   go('mensajes');
 }
 
-function sendChatMsg(){
-  const inp = document.getElementById('chat-input');
-  const txt = inp.value.trim();
-  if(!txt) return;
-  const t = THREADS[S.activeChat];
-  t.msgs.push({ me:true, t:txt, time:now() });
-  inp.value = '';
-  renderMensajes();
+async function sendChatMsg() {
+  if (typeof requireAuth === 'function' && !requireAuth('enviar mensajes')) return;
 
-  const interlocutor = S.activeChat;
-  setTimeout(() => {
-    let reply = "¡Totalmente de acuerdo! Qué gran punto de vista sobre esa obra.";
-    if(interlocutor === 'laura') {
-      reply = "¡Me encanta lo que dices! Podríamos quedar este viernes en La Central y charlarlo con un café, ¿te parece? ☕";
-    } else if(interlocutor === 'sofia') {
-      reply = "¡Qué ilusión leerte! En la caseta 12 de Moyano tienen maravillas de segunda mano. ¿Sueles pasear por allí?";
-    } else if(interlocutor === 'clara') {
-      reply = "Ese dilema me obsesiona desde hace meses. Apuntémonos a la cata con debate literario del jueves.";
-    }
-    t.msgs.push({ me:false, t:reply, time:now() });
-    toast(`Nuevo mensaje de ${t.name} 💌`);
-    if(S.tab === 'mensajes' && S.activeChat === interlocutor){
-      renderMensajes();
-    }
-  }, 1600);
+  const inp = document.getElementById('chat-input');
+  const txt = inp ? inp.value.trim() : '';
+  if (!txt) return;
+
+  if (!S.activeConversationId) {
+    toast('Selecciona una conversación activa para enviar el mensaje.');
+    return;
+  }
+
+  const { data, error } = await sbClient
+    .from('direct_messages')
+    .insert([{
+      conversation_id: S.activeConversationId,
+      sender_id: S.user.id,
+      body: txt
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error enviando mensaje en direct_messages:', error.message);
+    toast('No se pudo enviar el mensaje.');
+    return;
+  }
+
+  inp.value = '';
+  if (!S.realMessagesByConv[S.activeConversationId]) {
+    S.realMessagesByConv[S.activeConversationId] = [];
+  }
+  if (data && !S.realMessagesByConv[S.activeConversationId].some(m => m.id === data.id)) {
+    S.realMessagesByConv[S.activeConversationId].push(data);
+  }
+
+  if (typeof renderMensajes === 'function') {
+    renderMensajes();
+  }
 }
+window.sendChatMsg = sendChatMsg;
 
 const SAMPLE_PHOTOS = [
   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=700&q=80',
@@ -3475,73 +3754,77 @@ function removeAttachedMedia(){
 }
 
 async function publishUniversalContent(){
+    if (!requireAuth('publicar en la comunidad')) return;
     const txt = document.getElementById('composer-text').value.trim();
     if(!txt){ toast('Escribe algo sobre tu lectura'); return; }
     const bookId = Number(document.getElementById('composer-book').value);
-    const postId = 'post-' + Date.now();
 
     if(S.composerMedia === 'video'){
         const q = document.getElementById('composer-reel-q').value.trim() || '¿Qué opinas tú de este libro?';
         const bgImg = SAMPLE_PHOTOS[Math.floor(Math.random() * SAMPLE_PHOTOS.length)] || SAMPLE_PHOTOS[1];
+        const newReelId = crypto.randomUUID();
         const newReel = {
-            id: 'r-' + Date.now(),
-            user: 'kurko',
+            id: newReelId,
+            user: 'uid_' + S.user.id,
             book: bookId,
             quote: txt,
-            audio: 'Voz original · ' + ((S.user && S.user.name) ? S.user.name : 'Kur-ko'),
+            audio: 'Voz original · ' + (S.user.name || 'Lector'),
             triggerQuestion: q,
             videoBg: bgImg,
             likes: 1,
             comments: 0
         };
 
-        // 1. Añadir localmente y respaldo de seguridad
         REELS.unshift(newReel);
-        const savedLocalReels = JSON.parse(localStorage.getItem('ba_custom_reels') || '[]');
-        savedLocalReels.unshift(newReel);
-        localStorage.setItem('ba_custom_reels', JSON.stringify(savedLocalReels));
-
-        // 2. Guardar en Supabase
-        if (window.sbClient) {
-            sbClient.from('reels').insert([{
-                user_key: 'kurko',
-                book_id: bookId,
-                quote: txt,
-                audio_label: newReel.audio,
-                trigger_question: q,
-                video_bg: bgImg,
-                likes_count: 1
-            }]).then(({ error }) => {
-                if (error) console.error('Error al guardar Reel en Supabase:', error.message);
-                else console.log('Reel persistido en Supabase con éxito');
-            });
-        }
+        const { error } = await sbClient.from('reels').insert([{
+            id: newReelId,
+            author_id: S.user.id,
+            user_key: S.user.username || 'lector',
+            book_id: bookId,
+            quote: txt,
+            audio_label: newReel.audio,
+            trigger_question: q,
+            video_bg: bgImg,
+            likes_count: 1,
+            is_demo: false
+        }]);
+        if (error) console.error('Aviso Supabase reels:', error.message);
 
         closeComposer();
-        toast('¡Reel publicado en "Para ti" y guardado! 🎬');
+        toast('¡Reel publicado en "Para ti"! 🎬');
         S.feedMode = 'reels';
+        await fetchReelsFromDB();
         go('inicio');
     } else if(S.composerMedia === 'photo'){
-        const newPost = {
-            id: 'kurko',
-            author: S.user.name,
-            book: bookId,
-            caption: txt,
-            noteReflection: 'Compartido desde mi rincón de lectura',
-            place: 'Madrid · Lectura activa',
-            img: S.composerPhotoSrc,
-            likes: 1,
-            time: 'Justo ahora'
-        };
-        FEED_ITEMS.unshift(newPost);
+        const bookObj = BOOKS.find(b => Number(b.id) === bookId);
+        const { error } = await sbClient.from('notes').insert([{
+            id: crypto.randomUUID(),
+            author_id: S.user.id,
+            user_name: S.user.name,
+            user_avatar: S.user.photo,
+            book_id: bookId || null,
+            book_title: bookObj ? bookObj.t : 'Lectura personal',
+            note_type: 'photo',
+            audience: 'public',
+            book_quote: txt,
+            media_url: S.composerPhotoSrc,
+            user_comment: 'Momento fotográfico compartido',
+            location_name: S.show_city && S.user.city ? S.user.city : 'Comunidad lectora',
+            likes_count: 0,
+            is_demo: false
+        }]);
+        if (error) {
+            console.error('Error publicando foto:', error.message);
+            toast('No se pudo publicar la foto.');
+            return;
+        }
         closeComposer();
-        toast('¡Momento fotográfico publicado en Notas!');
+        toast('¡Momento fotográfico publicado!');
         S.feedMode = 'notas';
+        await fetchFeedFromDB();
         go('inicio');
     } else {
-        const bookObj = (typeof BOOKS !== 'undefined' && Array.isArray(BOOKS))
-            ? BOOKS.find(b => b.id === bookId)
-            : null;
+        const bookObj = BOOKS.find(b => Number(b.id) === bookId);
         const bookTitle = bookObj ? bookObj.t : 'Lectura personal';
 
         try {
@@ -3549,15 +3832,20 @@ async function publishUniversalContent(){
                 .from('notes')
                 .insert([{
                     id: crypto.randomUUID(),
-                    user_name: (typeof S !== 'undefined' && S.user && S.user.name) ? S.user.name : 'Kur-ko',
-                    user_avatar: (typeof USERS_DATA !== 'undefined' && USERS_DATA.kurko) ? USERS_DATA.kurko.photo : null,
+                    author_id: S.user.id,
+                    user_name: S.user.name,
+                    user_avatar: S.user.photo,
+                    book_id: bookId || null,
+                    note_type: 'quote',
+                    audience: 'public',
                     match_percent: 100,
                     book_title: bookTitle,
                     book_quote: txt,
                     user_comment: 'Reflexión compartida en comunidad',
-                    location_name: 'Madrid · Lectura activa',
+                    location_name: S.user.show_city && S.user.city ? S.user.city : 'Comunidad lectora',
                     rating: 9.5,
-                    likes_count: 0
+                    likes_count: 0,
+                    is_demo: false
                 }])
                 .select();
 
@@ -3568,13 +3856,10 @@ async function publishUniversalContent(){
             }
 
             console.log('Nota guardada con éxito en Supabase:', data);
-            
             closeComposer();
             toast('¡Nota literaria publicada con éxito!');
-            
             await fetchFeedFromDB();
             go('inicio');
-
         } catch (err) {
             console.error('Fallo en la publicación:', err);
             toast('Error de conexión');
@@ -3584,6 +3869,10 @@ async function publishUniversalContent(){
 let curWhisper = null;
 function openWhisper(targetUser, bookId, quoteText) {
   try {
+    const rawTarget = String(targetUser || '').replace(/^uid_/, '');
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawTarget);
+    S.pendingWhisperReceiverId = isUuid ? rawTarget : null;
+    S.pendingWhisperBookId = bookId ? Number(bookId) : null;
     currentWhisperUserKey = targetUser || 'laura';
     currentWhisperUserName = (typeof USERS_DATA !== 'undefined' && USERS_DATA[currentWhisperUserKey]) ? USERS_DATA[currentWhisperUserKey].name : 'Lector afín';
     // 1. Localizar el contenedor del modal de susurros
@@ -4177,6 +4466,10 @@ window.resetPasswordUser = resetPasswordUser;
 
 async function logoutUser() {
   await sbClient.auth.signOut();
+  if (S.realtimeChannel && window.sbClient) {
+  sbClient.removeChannel(S.realtimeChannel);
+  S.realtimeChannel = null;
+}
   setGuestState();
   updateHeader();
   openAuthModal('');
@@ -4190,6 +4483,8 @@ async function checkSession() {
   if (session && session.user) {
     if (authModal) authModal.classList.add('hidden');
     await loadUserProfile(session.user);
+    await fetchRequestsAndChatsFromDB();
+    subscribeRealtimeMessaging();
     updateHeader();
     if (typeof fetchUserRatingsFromDB === 'function') fetchUserRatingsFromDB();
     go(S.tab || 'inicio');
@@ -4268,47 +4563,85 @@ function closeWhisper() {
 }
 window.closeWhisper = closeWhisper;
 
-function sendWhisperMessage() {
+async function sendWhisperMessage() {
+  if (!requireAuth('enviar un susurro o solicitud de conexión')) return;
+
   const txtEl = document.getElementById('whisper-text');
   const txt = txtEl ? txtEl.value.trim() : '';
-
   if (!txt) {
-    if (typeof toast === 'function') toast('Escribe unas palabras antes de enviar tu susurro ✒️');
+    toast('Escribe unas palabras antes de enviar tu susurro ✒️');
     return;
   }
 
-  // 1. Identificar el destinatario ('marcos' o 'laura')
-const targetId = (typeof THREADS !== 'undefined' && THREADS[currentWhisperUserKey]) ? currentWhisperUserKey : 'laura';
-
-  // 2. Insertar en THREADS usando la propiedad exacta 't' y 'me: true'
-  if (typeof pushMsg === 'function') {
-    // Si existe pushMsg, gestiona la inserción y el refresco automáticamente
-    pushMsg(targetId, { me: true, t: whisperText });
-  } else if (typeof THREADS !== 'undefined' && THREADS[targetId]) {
-    if (!THREADS[targetId].msgs) THREADS[targetId].msgs = [];
-    THREADS[targetId].msgs.push({
-      me: true,
-      t: whisperText,
-      time: 'Ahora'
-    });
+  const receiverId = S.pendingWhisperReceiverId || null;
+  if (!receiverId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(receiverId))) {
+    toast('Este contenido pertenece a una muestra local sin cuenta real asociada.');
+    closeWhisperModal();
+    return;
   }
 
-  // 3. Cerrar la nota adhesiva
+  if (receiverId === S.user.id) {
+    toast('No puedes enviarte una solicitud a ti mismo.');
+    return;
+  }
+
+  const quoteCtx = document.getElementById('whisper-quote-context')?.textContent || '';
+
+  const { error } = await sbClient
+    .from('connection_requests')
+    .insert([{
+      sender_id: S.user.id,
+      receiver_id: receiverId,
+      request_type: 'whisper',
+      context_book_id: S.pendingWhisperBookId || null,
+      context_quote: quoteCtx && quoteCtx !== '«...»' ? quoteCtx : null,
+      intro_message: txt,
+      status: 'pending'
+    }]);
+
+  if (error) {
+    console.error('Error enviando solicitud:', error.message);
+    if (error.code === '23505') {
+      toast('Ya tienes una solicitud pendiente con esta persona.');
+    } else {
+      toast('No se pudo enviar la solicitud.');
+    }
+    return;
+  }
+
   closeWhisperModal();
+  await fetchRequestsAndChatsFromDB();
+  toast('Solicitud enviada. Se abrirá el chat cuando la acepte 💌');
+}
+window.sendWhisperMessage = sendWhisperMessage;
 
-  if (typeof toast === 'function') {
-    toast(`¡Susurro entregado a ${currentWhisperUserName || 'la persona lectora'}! 💌`);
+async function respondRequestAction(requestId, action) {
+  if (!requireAuth('responder solicitudes')) return;
+  const { data: convId, error } = await sbClient.rpc('respond_connection_request', {
+    p_request_id: requestId,
+    p_action: action
+  });
+
+  if (error) {
+    console.error('Error al responder solicitud:', error.message);
+    toast('No se pudo procesar la solicitud.');
+    return;
   }
 
-  // 4. Abrir la pantalla de chat directa con Marcos o Laura
-  if (typeof openChat === 'function') {
-    openChat(targetId);
+  await fetchRequestsAndChatsFromDB();
+
+  if (action === 'accept') {
+    toast('Solicitud aceptada. ¡Conversación abierta! ✨');
+    if (convId) {
+      await openRealConversation(convId);
+    }
   } else {
-    if (typeof S !== 'undefined') S.active = targetId;
-    if (typeof go === 'function') go('mensajes');
-    if (typeof renderMensajes === 'function') renderMensajes();
+    toast('Solicitud rechazada.');
   }
 }
+window.respondRequestAction = respondRequestAction;
+
+
 // =========================================================================
 // 💬 HILOS PÚBLICOS EN EL MURO (ANOTAR AL MARGEN)
 // =========================================================================
@@ -4366,28 +4699,7 @@ function renderPublicComments(postId) {
   `).join('');
 }
 
-function postPublicComment(postId) {
-  const targetId = String(postId || 'default');
-  const input = document.getElementById(`thread-input-${targetId}`);
-  const txt = input ? input.value.trim() : '';
-  if (!txt) return;
 
-  const myName = (typeof S !== 'undefined' && S.user && S.user.name) ? S.user.name : 'Kur-ko';
-
-  if (!window.PUBLIC_COMMENTS[targetId]) window.PUBLIC_COMMENTS[targetId] = [];
-  window.PUBLIC_COMMENTS[targetId].push({
-    author: myName,
-    text: txt,
-    time: 'Ahora'
-  });
-
-  input.value = '';
-  renderPublicComments(targetId);
-
-  const countBadge = document.getElementById(`count-comments-${targetId}`);
-  if (countBadge) countBadge.textContent = window.PUBLIC_COMMENTS[targetId].length;
-  if (typeof toast === 'function') toast('Anotación compartida en el muro 🖋️');
-}
   function replyToComment(postId, targetAuthor) {
   const targetId = String(postId || 'default');
   const input = document.getElementById(`thread-input-${targetId}`);
@@ -4626,6 +4938,173 @@ async function fetchReelsFromDB() {
   }
 }
 window.fetchReelsFromDB = fetchReelsFromDB;
+// =========================================================================
+// 💬 SOLICITUDES, CHAT EN TIEMPO REAL (REALTIME) Y SEGURIDAD (P0.3)
+// =========================================================================
+
+async function fetchCommunityProfilesFromDB() {
+  try {
+    const { data, error } = await sbClient
+      .from('public_profiles')
+      .select('id, username, display_name, avatar_url, bio, visible_city, favorite_genres, connection_intent, archetype_rj, profile_visibility');
+
+    if (error) {
+      console.error('Error cargando public_profiles:', error.message);
+      return;
+    }
+
+    S.realProfiles = {};
+    (data || []).forEach(p => {
+      if (S.user && S.user.id && p.id === S.user.id) return;
+      S.realProfiles[p.id] = p;
+    });
+  } catch (err) {
+    console.error('Excepción cargando perfiles públicos:', err);
+  }
+}
+window.fetchCommunityProfilesFromDB = fetchCommunityProfilesFromDB;
+
+async function fetchRequestsAndChatsFromDB() {
+  if (S.isGuest || !S.user || !S.user.id) {
+    S.incomingRequests = [];
+    S.outgoingRequests = [];
+    S.realConversations = [];
+    S.unreadTotal = 0;
+    updateChatBadgeUI();
+    return;
+  }
+
+  try {
+    await fetchCommunityProfilesFromDB();
+
+    const { data: reqs, error: reqErr } = await sbClient
+      .from('connection_requests')
+      .select('*')
+      .or(`sender_id.eq.${S.user.id},receiver_id.eq.${S.user.id}`)
+      .order('created_at', { ascending: false });
+
+    if (reqErr) {
+      console.error('Error cargando connection_requests:', reqErr.message);
+    } else {
+      S.incomingRequests = (reqs || []).filter(r => r.receiver_id === S.user.id && r.status === 'pending');
+      S.outgoingRequests = (reqs || []).filter(r => r.sender_id === S.user.id && r.status === 'pending');
+    }
+
+    const { data: convs, error: convErr } = await sbClient
+      .from('conversations')
+      .select('*')
+      .or(`user_a.eq.${S.user.id},user_b.eq.${S.user.id}`)
+      .order('last_message_at', { ascending: false });
+
+    if (convErr) {
+      console.error('Error cargando conversations:', convErr.message);
+      return;
+    }
+
+    S.realConversations = convs || [];
+    const convIds = S.realConversations.map(c => c.id);
+
+    S.realMessagesByConv = {};
+    let unreadCount = 0;
+
+    if (convIds.length > 0) {
+      const { data: msgs, error: msgErr } = await sbClient
+        .from('direct_messages')
+        .select('*')
+        .in('conversation_id', convIds)
+        .order('created_at', { ascending: true });
+
+      if (!msgErr && Array.isArray(msgs)) {
+        msgs.forEach(m => {
+          if (!S.realMessagesByConv[m.conversation_id]) S.realMessagesByConv[m.conversation_id] = [];
+          S.realMessagesByConv[m.conversation_id].push(m);
+          if (m.sender_id !== S.user.id && !m.read_at && m.conversation_id !== S.activeConversationId) {
+            unreadCount++;
+          }
+        });
+      }
+    }
+
+    S.unreadTotal = unreadCount + S.incomingRequests.length;
+    updateChatBadgeUI();
+
+    if (S.tab === 'mensajes') {
+      renderMensajes();
+    }
+  } catch (err) {
+    console.error('Fallo cargando solicitudes y chats:', err);
+  }
+}
+window.fetchRequestsAndChatsFromDB = fetchRequestsAndChatsFromDB;
+
+function updateChatBadgeUI() {
+  const badge = document.getElementById('chat-badge');
+  if (!badge) return;
+  const count = Number(S.unreadTotal || 0);
+  badge.textContent = String(count);
+  badge.classList.toggle('hidden', count <= 0);
+  badge.classList.toggle('animate-pulse', count > 0);
+}
+
+function subscribeRealtimeMessaging() {
+  if (!window.sbClient || S.isGuest || !S.user || !S.user.id) return;
+
+  if (S.realtimeChannel) {
+    sbClient.removeChannel(S.realtimeChannel);
+    S.realtimeChannel = null;
+  }
+
+  S.realtimeChannel = sbClient
+    .channel(`ba-realtime-${S.user.id}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'connection_requests' },
+      async (payload) => {
+        const row = payload.new || payload.old;
+        if (!row) return;
+        if (row.receiver_id === S.user.id || row.sender_id === S.user.id) {
+          if (payload.eventType === 'INSERT' && row.receiver_id === S.user.id) {
+            toast('Has recibido una nueva solicitud literaria 💌');
+          }
+          await fetchRequestsAndChatsFromDB();
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'direct_messages' },
+      async (payload) => {
+        const msg = payload.new;
+        if (!msg || !msg.conversation_id) return;
+        const isMyConv = S.realConversations.some(c => c.id === msg.conversation_id);
+        if (!isMyConv && S.activeConversationId !== msg.conversation_id) {
+          await fetchRequestsAndChatsFromDB();
+          return;
+        }
+
+        if (!S.realMessagesByConv[msg.conversation_id]) {
+          S.realMessagesByConv[msg.conversation_id] = [];
+        }
+        const exists = S.realMessagesByConv[msg.conversation_id].some(m => m.id === msg.id);
+        if (!exists) {
+          S.realMessagesByConv[msg.conversation_id].push(msg);
+        }
+
+        if (S.tab === 'mensajes' && S.activeConversationId === msg.conversation_id) {
+          if (msg.sender_id !== S.user.id) {
+            await sbClient.rpc('mark_conversation_read', { p_conversation_id: msg.conversation_id });
+          }
+          renderMensajes();
+        } else if (msg.sender_id !== S.user.id) {
+          S.unreadTotal = (S.unreadTotal || 0) + 1;
+          updateChatBadgeUI();
+          toast('Nuevo mensaje recibido 💌');
+        }
+      }
+    )
+    .subscribe();
+}
+window.subscribeRealtimeMessaging = subscribeRealtimeMessaging;
 </script>
 <div id="modal-book" class="hidden fixed inset-0 z-[9999] flex flex-col justify-end bg-black/60 backdrop-blur-sm" style="display:none;" onclick="if(event.target===this)closeBookModal()">
   <div class="w-full max-w-md max-h-[85vh] overflow-y-auto bg-[var(--surface)] text-[var(--ink)] rounded-t-[28px] sm:rounded-[28px] border border-[var(--line)] shadow-2xl p-5 space-y-4">
