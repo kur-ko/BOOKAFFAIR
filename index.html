@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Book Affair - Comunidad, Citas Literarias y Radar Cultural</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#6B1124">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BookAffair">
 <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 <script>
   tailwind.config = {
@@ -735,38 +740,6 @@ body {
     </div>
   </div>
 
-  <!-- MODAL MATCH: COMPLICIDAD DE LECTURA -->
-  <div id="modal-match" class="absolute inset-0 hidden z-50 flex items-center justify-center p-5" style="background:rgba(10,12,18,0.85); backdrop-filter:blur(8px);">
-    <div class="w-full max-w-sm rounded-3xl p-6 text-center space-y-4 pop border shadow-2xl relative" style="background:var(--surface); border-color:var(--gold);">
-      <div class="inline-block px-3 py-1 rounded-full text-xs font-black tracking-widest text-amber-950 dark:text-amber-200 uppercase shadow-md bg-gradient-to-r from-amber-300 to-amber-500">
-        ✨ ¡Complicidad de Lectura Hallada! ✨
-      </div>
-      <div class="flex items-center justify-center gap-3 pt-2">
-        <div class="w-20 h-20 rounded-full p-1 border-2 border-amber-500 shadow-lg relative">
-          <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" class="w-full h-full rounded-full object-cover"/>
-        </div>
-        <div class="w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-md text-white" style="background:linear-gradient(135deg,var(--maroon),var(--accent))">
-          📖
-        </div>
-        <div class="w-20 h-20 rounded-full p-1 border-2 border-rose-500 shadow-lg">
-          <img id="match-photo" src="" class="w-full h-full rounded-full object-cover"/>
-        </div>
-      </div>
-      <div>
-        <h3 class="serif text-xl font-bold" id="match-name"></h3>
-        <p class="text-xs font-bold text-amber-700 dark:text-amber-400 mt-0.5" id="match-af"></p>
-        <p class="text-xs mt-2 px-2 leading-relaxed" style="color:var(--muted)" id="match-desc"></p>
-      </div>
-      <div class="space-y-2 pt-2">
-        <button class="btn w-full py-3 text-xs font-bold shadow-lg" onclick="startMatchChat()">
-          Susurrar cita y romper el hielo ✉️
-        </button>
-        <button class="btn-ghost w-full py-2.5 text-xs font-semibold" onclick="closeMatchModal()">
-          Seguir descubriendo almas lectoras
-        </button>
-      </div>
-    </div>
-  </div>
 
   
 
@@ -1639,23 +1612,66 @@ function renderDailyDuelCard() {
   `;
 }
 
-function voteDailyDuel(choice) {
+async function fetchDailyDuelFromDB() {
+  if (!window.sbClient) return;
+  try {
+    const { data, error } = await sbClient
+      .from('daily_dilemma_votes')
+      .select('voter_key, choice');
+
+    if (error) {
+      console.error('Error cargando votos del dilema:', error.message);
+      return;
+    }
+
+    const rows = data || [];
+    const papelVotes = rows.filter(r => r.choice === 'papel').length;
+    const digitalVotes = rows.filter(r => r.choice === 'digital').length;
+
+    S.votesDuel = {
+      papel: 814 + papelVotes,
+      digital: 320 + digitalVotes
+    };
+
+    const voterKey = (S.user && S.user.id) ? S.user.id : 'anon_session';
+    const myRow = rows.find(r => r.voter_key === voterKey);
+    if (myRow) {
+      S.myVoteDuel = myRow.choice;
+    }
+
+    if (S.tab === 'inicio' && typeof renderInicio === 'function') {
+      renderInicio();
+    }
+  } catch (err) {
+    console.error('Fallo de red en fetchDailyDuelFromDB:', err);
+  }
+}
+
+async function voteDailyDuel(choice) {
   if (S.myVoteDuel) return;
+  if (typeof requireAuth === 'function' && !requireAuth('votar en el Dilema Literario del Día')) return;
+
   S.myVoteDuel = choice;
-  S.votesDuel[choice]++;
+  S.votesDuel[choice] = (S.votesDuel[choice] || 0) + 1;
   S.quizScore = (S.quizScore || 280) + 10;
   toast('¡Opinión registrada en el Dilema del Día! +10 pts de erudición ✨');
   renderInicio();
+
+  if (window.sbClient && S.user && S.user.id) {
+    const { error } = await sbClient
+      .from('daily_dilemma_votes')
+      .upsert(
+        { voter_key: S.user.id, choice },
+        { onConflict: 'voter_key' }
+      );
+    if (error) {
+      console.error('Error guardando voto del dilema:', error.message);
+    }
+  }
 }
 window.voteDailyDuel = voteDailyDuel;
+window.fetchDailyDuelFromDB = fetchDailyDuelFromDB;
 
-function setReadingHourDirect(h) {
-  S.user.readingHour = h;
-  localStorage.setItem('ba_reading_hour', h);
-  toast(`Ritual de lectura fijado a las ${h} ⏰`);
-  if (S.tab === 'inicio') renderInicio();
-}
-window.setReadingHourDirect = setReadingHourDirect;
 
 function renderDailyDuelCard() {
   const total = S.votesDuel.papel + S.votesDuel.digital;
@@ -1701,15 +1717,7 @@ function renderDailyDuelCard() {
   `;
 }
 
-function voteDailyDuel(choice) {
-  if (S.myVoteDuel) return;
-  S.myVoteDuel = choice;
-  S.votesDuel[choice]++;
-  S.quizScore = (S.quizScore || 280) + 10;
-  toast('¡Opinión registrada en el Dilema del Día! +10 pts de erudición ✨');
-  renderInicio();
-}
-window.voteDailyDuel = voteDailyDuel;
+
 
 function renderInicio(){
   const el = document.getElementById('v-inicio');
@@ -4311,6 +4319,79 @@ function initHookStreak() {
   localStorage.setItem('ba_streak', streak);
 }
 
+async function syncStreakFromDB() {
+  if (!window.sbClient || S.isGuest || !S.user || !S.user.id) return;
+
+  try {
+    const today = getTodayDateString();
+    const { data, error } = await sbClient
+      .from('user_streaks')
+      .select('*')
+      .eq('user_id', S.user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error leyendo racha en Supabase:', error.message);
+      return;
+    }
+
+    if (data) {
+      let streak = Number(data.streak || 0);
+      let salvavidas = Number(data.salvavidas ?? 1);
+      const lastRead = data.last_read_date || null;
+      const readingHour = data.reading_hour || S.user.readingHour || '21:30';
+      let readToday = false;
+
+      if (lastRead === today) {
+        readToday = true;
+      } else if (lastRead) {
+        const lastDate = new Date(lastRead + 'T00:00:00');
+        const todayDate = new Date(today + 'T00:00:00');
+        const diffDays = Math.round((todayDate - lastDate) / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 1) {
+          readToday = false;
+        } else if (diffDays > 1) {
+          if (diffDays === 2 && salvavidas > 0) {
+            salvavidas--;
+            readToday = false;
+            toast('🛡️ Racha salvada automáticamente por tu comodín semanal.');
+          } else {
+            streak = 0;
+            readToday = false;
+          }
+        }
+      }
+
+      S.user.streak = streak;
+      S.user.salvavidas = salvavidas;
+      S.user.readingHour = readingHour;
+      S.user.readToday = readToday;
+
+      localStorage.setItem('ba_streak', String(streak));
+      localStorage.setItem('ba_salvavidas', String(salvavidas));
+      localStorage.setItem('ba_reading_hour', readingHour);
+      if (lastRead) localStorage.setItem('ba_last_read_date', lastRead);
+
+      updateHeader();
+      if (S.tab === 'inicio') renderInicio();
+      if (S.tab === 'perfil') renderPerfil();
+    } else {
+      await sbClient.from('user_streaks').upsert({
+        user_id: S.user.id,
+        streak: S.user.streak || 0,
+        salvavidas: S.user.salvavidas ?? 1,
+        last_read_date: localStorage.getItem('ba_last_read_date') || null,
+        reading_hour: S.user.readingHour || '21:30',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+    }
+  } catch (err) {
+    console.error('Fallo en syncStreakFromDB:', err);
+  }
+}
+window.syncStreakFromDB = syncStreakFromDB;
+
 function quickReadAction() {
   if (!S.user.readToday) {
     logReadingSession();
@@ -4621,6 +4702,8 @@ async function checkSession() {
     subscribeRealtimeMessaging();
     updateHeader();
     if (typeof fetchUserRatingsFromDB === 'function') fetchUserRatingsFromDB();
+    if (typeof fetchDailyDuelFromDB === 'function') fetchDailyDuelFromDB();
+    if (typeof syncStreakFromDB === 'function') syncStreakFromDB();
     go(S.tab || 'inicio');
   } else {
     setGuestState();
@@ -4687,15 +4770,8 @@ function closeWhisperModal() {
 }
 window.closeWhisperModal = closeWhisperModal;
 
-function closeWhisper() {
-  closeWhisperModal();
-}
-window.closeWhisper = closeWhisper;
 
-function closeWhisper() {
-  closeWhisperModal();
-}
-window.closeWhisper = closeWhisper;
+
 
 async function sendWhisperMessage() {
   if (!requireAuth('enviar un susurro o solicitud de conexión')) return;
